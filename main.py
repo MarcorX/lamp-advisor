@@ -46,6 +46,52 @@ def on_startup():
 
 
 # ---------------------------------------------------------------------------
+# API Key / Anthropic Status Check
+# ---------------------------------------------------------------------------
+@app.get("/api/status")
+async def api_status():
+    """Tests the Anthropic API key and returns connection status."""
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+
+    if not api_key or api_key.startswith("your_"):
+        return JSONResponse({
+            "anthropic": "missing",
+            "message": "No API key set in .env file",
+            "model": None,
+        })
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        msg = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=10,
+            messages=[{"role": "user", "content": "ping"}],
+        )
+        return JSONResponse({
+            "anthropic": "ok",
+            "message": "Connected — API key is valid",
+            "model": msg.model,
+            "key_preview": f"{api_key[:8]}…{api_key[-4:]}",
+        })
+    except Exception as e:
+        err = str(e)
+        if "401" in err or "authentication" in err.lower() or "invalid" in err.lower():
+            status = "invalid_key"
+            msg = "API key is invalid or revoked"
+        elif "403" in err:
+            status = "no_permission"
+            msg = "API key lacks permission for this model"
+        elif "connection" in err.lower() or "network" in err.lower():
+            status = "network_error"
+            msg = "Cannot reach Anthropic — check internet connection"
+        else:
+            status = "error"
+            msg = err[:120]
+        return JSONResponse({"anthropic": status, "message": msg, "model": None}, status_code=200)
+
+
+# ---------------------------------------------------------------------------
 # SSE Stream endpoint
 # ---------------------------------------------------------------------------
 @app.get("/stream/{session_id}")

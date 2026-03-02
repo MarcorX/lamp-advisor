@@ -93,8 +93,29 @@
       </a>
     </nav>
 
-    <div class="px-4 py-3 border-t border-slate-800">
-      <p class="text-slate-600 text-xs">LampAdvisor v2.0</p>
+    <!-- API Status -->
+    <div class="px-3 py-3 border-t border-slate-800" x-data="apiStatus()" x-init="check()">
+      <button @click="check()" title="Click to recheck"
+        class="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-slate-800 transition-colors">
+        <span class="w-2.5 h-2.5 rounded-full shrink-0 transition-colors"
+              :class="{
+                'bg-emerald-400 shadow-[0_0_6px_#34d399]': status === 'ok',
+                'bg-red-400': status === 'invalid_key' || status === 'no_permission',
+                'bg-amber-400 animate-pulse': status === 'checking',
+                'bg-slate-500': status === 'missing' || status === 'network_error' || status === 'error'
+              }"></span>
+        <div class="min-w-0 flex-1 text-left">
+          <p class="text-xs font-medium leading-tight"
+             :class="{
+               'text-emerald-400': status === 'ok',
+               'text-red-400': status === 'invalid_key' || status === 'no_permission',
+               'text-amber-400': status === 'checking',
+               'text-slate-500': status === 'missing' || status === 'network_error' || status === 'error'
+             }"
+             x-text="label"></p>
+          <p class="text-slate-600 text-xs truncate" x-text="detail"></p>
+        </div>
+      </button>
     </div>
   </aside>
 
@@ -179,6 +200,37 @@
   </div>
 
   <script>
+    function apiStatus() {
+      return {
+        status: 'checking',
+        label: 'Checking API…',
+        detail: 'Anthropic connection',
+
+        async check() {
+          this.status = 'checking';
+          this.label = 'Checking…';
+          try {
+            const res = await fetch('/api/status');
+            const data = await res.json();
+            this.status = data.anthropic;
+            const map = {
+              ok:            ['Claude AI · Connected', data.key_preview || ''],
+              missing:       ['No API Key', 'Add key to .env file'],
+              invalid_key:   ['Invalid API Key', 'Check key in .env'],
+              no_permission: ['API Permission Error', 'Check key scopes'],
+              network_error: ['Network Error', 'Check internet connection'],
+              error:         ['API Error', data.message || ''],
+            };
+            [this.label, this.detail] = map[data.anthropic] || ['Unknown', data.message || ''];
+          } catch(e) {
+            this.status = 'error';
+            this.label = 'Status check failed';
+            this.detail = '';
+          }
+        }
+      }
+    }
+
     function chatPanel() {
       return {
         open: false,
