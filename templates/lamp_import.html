@@ -1,73 +1,259 @@
 {% extends "base.html" %}
 {% block title %}Import Catalog — LampAdvisor{% endblock %}
 {% block content %}
-<div class="p-8 max-w-2xl">
+<div class="p-8 max-w-3xl" x-data="importFlow()">
+
   <div class="mb-6">
-    <h2 class="text-2xl font-bold text-gray-900">Import Lamp Catalog</h2>
-    <p class="text-gray-500 mt-1">Upload your lamp database as an Excel (.xlsx) or CSV file.</p>
+    <h2 class="text-2xl font-bold text-slate-900">Import Lamp Catalog</h2>
+    <p class="text-slate-500 mt-1">Upload any format — Claude AI will map your columns automatically.</p>
   </div>
 
-  {% if success %}
-  <div class="mb-6 bg-green-50 border border-green-200 text-green-700 rounded-lg px-4 py-4 flex items-center gap-3">
-    <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-    <span>{{ success }}</span>
+  <!-- AI Feature Banner -->
+  <div class="card p-5 mb-6 border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 flex items-start gap-4">
+    <div class="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center text-white font-bold text-sm shrink-0">AI</div>
+    <div>
+      <p class="font-semibold text-slate-800">Smart Column Mapping</p>
+      <p class="text-sm text-slate-500 mt-0.5">Upload Excel, CSV, or even a PDF product catalog. Claude AI reads your file and automatically maps every column to the correct lamp field — brand, lumens, CCT, price, level, and more. No formatting required.</p>
+    </div>
   </div>
-  {% endif %}
 
-  {% if error %}
-  <div class="mb-6 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-4">
-    <p class="font-semibold">Import failed</p>
-    <p class="text-sm mt-1">{{ error }}</p>
+  <!-- Upload Form (hidden when processing) -->
+  <div x-show="!processing && !done" class="card p-6 mb-6">
+    <h3 class="font-semibold text-slate-800 mb-4">Upload your catalog</h3>
+
+    <form id="importForm" @submit.prevent="submitImport">
+      <label class="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-xl p-10 cursor-pointer hover:border-amber-400 hover:bg-amber-50 transition-all"
+             :class="fileName ? 'border-amber-400 bg-amber-50' : ''">
+        <svg class="w-12 h-12 mb-3" :class="fileName ? 'text-amber-500' : 'text-slate-300'" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        <p class="text-sm font-medium text-slate-700" x-text="fileName || 'Click to select file'"></p>
+        <p class="text-xs text-slate-400 mt-1">Excel (.xlsx, .xls), CSV, or PDF product catalog</p>
+        <input type="file" id="catalogFile" name="file" accept=".csv,.xlsx,.xls,.pdf" class="hidden"
+               @change="fileName = $event.target.files[0]?.name || ''"/>
+      </label>
+
+      <div class="mt-4 flex gap-3">
+        <button type="submit" :disabled="!fileName"
+          class="flex-1 btn-primary py-3 text-base disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          Import with AI
+        </button>
+        <a href="/lamps/template" class="btn-secondary py-3 flex items-center gap-2">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+          Template
+        </a>
+      </div>
+    </form>
   </div>
-  {% endif %}
 
-  <div class="bg-white rounded-xl border border-gray-200 p-6 mb-6">
-    <h3 class="font-semibold text-gray-800 mb-4">Accepted Column Names</h3>
+  <!-- Progress Panel (shown during processing) -->
+  <div x-show="processing || done" x-cloak class="card p-6 mb-6">
+    <div class="flex items-center justify-between mb-5">
+      <h3 class="font-semibold text-slate-800">Import Progress</h3>
+      <span x-show="processing" class="text-xs text-amber-600 font-medium flex items-center gap-1.5">
+        <span class="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
+        Processing…
+      </span>
+      <span x-show="done && !error" class="text-xs text-emerald-600 font-medium flex items-center gap-1.5">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        Complete
+      </span>
+    </div>
+
+    <!-- Progress Bar -->
+    <div class="w-full bg-slate-100 rounded-full h-2 mb-5">
+      <div class="bg-amber-500 h-2 rounded-full transition-all duration-500" :style="`width: ${progressPct}%`"></div>
+    </div>
+
+    <!-- Steps -->
+    <div class="space-y-2.5 mb-5">
+      <template x-for="(step, i) in steps" :key="i">
+        <div class="flex items-start gap-3">
+          <div class="w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5"
+               :class="{
+                 'bg-emerald-100 text-emerald-600': step.done,
+                 'bg-amber-100 text-amber-600': step.active && !step.done,
+                 'bg-slate-100 text-slate-400': !step.active && !step.done
+               }">
+            <svg x-show="step.done" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>
+            <svg x-show="step.active && !step.done" class="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            <span x-show="!step.active && !step.done" class="w-1.5 h-1.5 bg-slate-300 rounded-full"></span>
+          </div>
+          <div>
+            <p class="text-sm font-medium text-slate-700" x-text="step.label"></p>
+            <p x-show="step.detail" class="text-xs text-slate-400 mt-0.5" x-text="step.detail"></p>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <!-- Log -->
+    <div class="bg-slate-900 rounded-xl p-4 font-mono text-xs text-slate-300 h-32 overflow-y-auto" id="importLog">
+      <template x-for="(line, i) in log" :key="i">
+        <div class="leading-relaxed">
+          <span class="text-slate-600">›</span>
+          <span :class="line.includes('✓') ? 'text-emerald-400' : line.includes('Error') ? 'text-red-400' : 'text-slate-300'" x-text="' ' + line"></span>
+        </div>
+      </template>
+    </div>
+
+    <!-- Done Actions -->
+    <div x-show="done && !error" class="mt-5 flex gap-3">
+      <a href="/lamps" class="flex-1 btn-primary py-3 text-center text-base">
+        View Catalog (<span x-text="importedCount"></span> lamps) →
+      </a>
+      <button @click="reset" class="btn-secondary">Import Another</button>
+    </div>
+    <div x-show="done && error" class="mt-5">
+      <div class="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm mb-3" x-text="errorMsg"></div>
+      <button @click="reset" class="btn-secondary">Try Again</button>
+    </div>
+  </div>
+
+  <!-- Column Guide -->
+  <div x-show="!processing && !done" class="card overflow-hidden">
+    <div class="px-6 py-4 border-b border-slate-100">
+      <h3 class="font-semibold text-slate-800">Accepted Column Names</h3>
+      <p class="text-sm text-slate-500 mt-0.5">AI handles any format, but here are the exact names if you prefer manual mapping.</p>
+    </div>
     <div class="overflow-x-auto">
-      <table class="text-xs w-full">
-        <thead class="bg-gray-50 text-gray-500 uppercase">
+      <table class="w-full text-xs">
+        <thead class="bg-slate-50 text-slate-500 uppercase tracking-wide">
           <tr>
-            <th class="text-left px-3 py-2">Column (English)</th>
-            <th class="text-left px-3 py-2">Also accepted (Spanish)</th>
-            <th class="text-left px-3 py-2">Example</th>
+            <th class="text-left px-4 py-2.5">Field</th>
+            <th class="text-left px-4 py-2.5">Also accepted</th>
+            <th class="text-left px-4 py-2.5">Example</th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-gray-100 text-gray-700">
-          <tr><td class="px-3 py-2 font-medium">brand</td><td class="px-3 py-2 text-gray-400">marca, fabricante</td><td class="px-3 py-2">Philips</td></tr>
-          <tr><td class="px-3 py-2 font-medium">model</td><td class="px-3 py-2 text-gray-400">modelo, nombre</td><td class="px-3 py-2">CorePro LED</td></tr>
-          <tr><td class="px-3 py-2 font-medium">category</td><td class="px-3 py-2 text-gray-400">categoria, tipo</td><td class="px-3 py-2">downlight, pendant…</td></tr>
-          <tr><td class="px-3 py-2 font-medium">wattage</td><td class="px-3 py-2 text-gray-400">vatios, watts, w</td><td class="px-3 py-2">9</td></tr>
-          <tr><td class="px-3 py-2 font-medium">lumens</td><td class="px-3 py-2 text-gray-400">lm</td><td class="px-3 py-2">806</td></tr>
-          <tr><td class="px-3 py-2 font-medium">color_temp</td><td class="px-3 py-2 text-gray-400">temperatura, cct</td><td class="px-3 py-2">3000K</td></tr>
-          <tr><td class="px-3 py-2 font-medium">cri</td><td class="px-3 py-2 text-gray-400">irc</td><td class="px-3 py-2">80</td></tr>
-          <tr><td class="px-3 py-2 font-medium">ip_rating</td><td class="px-3 py-2 text-gray-400">ip, proteccion</td><td class="px-3 py-2">IP44</td></tr>
-          <tr><td class="px-3 py-2 font-medium">dimmable</td><td class="px-3 py-2 text-gray-400">regulable, dimmer</td><td class="px-3 py-2">True / False</td></tr>
-          <tr><td class="px-3 py-2 font-medium">property_level</td><td class="px-3 py-2 text-gray-400">nivel, gama</td><td class="px-3 py-2">basic / mid / premium / luxury</td></tr>
-          <tr><td class="px-3 py-2 font-medium">indoor_outdoor</td><td class="px-3 py-2 text-gray-400">interior_exterior</td><td class="px-3 py-2">indoor / outdoor / both</td></tr>
-          <tr><td class="px-3 py-2 font-medium">price_usd</td><td class="px-3 py-2 text-gray-400">precio, price, costo</td><td class="px-3 py-2">45.00</td></tr>
-          <tr><td class="px-3 py-2 font-medium">space_type</td><td class="px-3 py-2 text-gray-400">espacio, uso</td><td class="px-3 py-2">living,bedroom</td></tr>
+        <tbody class="divide-y divide-slate-50 text-slate-600">
+          {% for row in [
+            ('brand','marca, fabricante','Philips'),
+            ('model','modelo, nombre','CorePro 9W'),
+            ('category','categoria, tipo','downlight, pendant, panel…'),
+            ('wattage','vatios, watts, w','9'),
+            ('lumens','lm','806'),
+            ('color_temp','temperatura, cct','3000K'),
+            ('cri','irc','80 or 90'),
+            ('ip_rating','ip, proteccion','IP20, IP44, IP65'),
+            ('dimmable','regulable, dimmer','True / False'),
+            ('property_level','nivel, gama','basic / mid / premium / luxury'),
+            ('indoor_outdoor','interior_exterior','indoor / outdoor / both'),
+            ('price_usd','precio, price, costo','45.00'),
+            ('space_type','espacio, uso','living,bedroom,lobby'),
+          ] %}
+          <tr class="hover:bg-slate-50">
+            <td class="px-4 py-2.5 font-medium text-slate-800">{{ row[0] }}</td>
+            <td class="px-4 py-2.5 text-slate-400">{{ row[1] }}</td>
+            <td class="px-4 py-2.5 text-amber-600">{{ row[2] }}</td>
+          </tr>
+          {% endfor %}
         </tbody>
       </table>
     </div>
-    <div class="mt-4 pt-4 border-t border-gray-100">
-      <a href="/lamps/template" class="inline-flex items-center gap-2 text-sm text-amber-600 hover:underline font-medium">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-        Download CSV template
-      </a>
-    </div>
   </div>
-
-  <form method="post" enctype="multipart/form-data" class="bg-white rounded-xl border border-gray-200 p-6">
-    <label class="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-xl p-10 cursor-pointer hover:border-amber-400 hover:bg-amber-50 transition-colors">
-      <svg class="w-12 h-12 text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-      <p class="text-sm font-medium text-gray-700">Click to upload Excel or CSV</p>
-      <p class="text-xs text-gray-400 mt-1">.xlsx, .xls, .csv accepted</p>
-      <input type="file" name="file" accept=".csv,.xlsx,.xls" required class="hidden" onchange="document.getElementById('iname').textContent = this.files[0]?.name || ''"/>
-    </label>
-    <p id="iname" class="text-xs text-amber-600 mt-2 font-medium text-center"></p>
-    <button type="submit" class="mt-4 w-full bg-amber-500 hover:bg-amber-600 text-white font-semibold py-3 rounded-xl transition-colors">
-      Import Catalog
-    </button>
-  </form>
 </div>
+
+<script>
+function importFlow() {
+  return {
+    fileName: '',
+    processing: false,
+    done: false,
+    error: false,
+    errorMsg: '',
+    progressPct: 0,
+    importedCount: 0,
+    log: [],
+    steps: [
+      { label: 'Reading file', detail: '', active: false, done: false },
+      { label: 'AI mapping columns', detail: '', active: false, done: false },
+      { label: 'Saving to database', detail: '', active: false, done: false },
+    ],
+    stepMap: { reading: 0, mapping: 1, saving: 2 },
+
+    reset() {
+      this.fileName = '';
+      this.processing = false;
+      this.done = false;
+      this.error = false;
+      this.errorMsg = '';
+      this.progressPct = 0;
+      this.importedCount = 0;
+      this.log = [];
+      this.steps.forEach(s => { s.active = false; s.done = false; s.detail = ''; });
+      document.getElementById('catalogFile').value = '';
+    },
+
+    async submitImport() {
+      const fileInput = document.getElementById('catalogFile');
+      if (!fileInput.files[0]) return;
+
+      const formData = new FormData();
+      formData.append('file', fileInput.files[0]);
+
+      this.processing = true;
+      this.done = false;
+      this.log = [];
+      this.progressPct = 5;
+
+      try {
+        const res = await fetch('/api/lamps/import', { method: 'POST', body: formData });
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.detail || 'Upload failed');
+        }
+        const { session_id } = await res.json();
+        this.watchProgress(session_id);
+      } catch(e) {
+        this.processing = false;
+        this.done = true;
+        this.error = true;
+        this.errorMsg = e.message;
+      }
+    },
+
+    watchProgress(sessionId) {
+      const es = new EventSource(`/stream/${sessionId}`);
+      es.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        this.log.push(data.msg || '');
+        this.$nextTick(() => {
+          const el = document.getElementById('importLog');
+          if (el) el.scrollTop = el.scrollHeight;
+        });
+
+        if (data.progress) this.progressPct = data.progress;
+
+        const stepIdx = this.stepMap[data.step];
+        if (stepIdx !== undefined) {
+          this.steps.forEach((s, i) => {
+            if (i < stepIdx) { s.active = false; s.done = true; }
+            else if (i === stepIdx) { s.active = true; s.done = false; s.detail = data.msg || ''; }
+          });
+        }
+
+        if (data.done) {
+          es.close();
+          this.processing = false;
+          this.done = true;
+          this.progressPct = 100;
+          this.steps.forEach(s => { s.active = false; s.done = true; });
+          if (data.step === 'error') {
+            this.error = true;
+            this.errorMsg = data.msg || 'Import failed';
+          } else {
+            this.importedCount = data.count || 0;
+          }
+        }
+      };
+      es.onerror = () => {
+        es.close();
+        this.processing = false;
+        this.done = true;
+        this.error = true;
+        this.errorMsg = 'Connection lost during import.';
+      };
+    }
+  }
+}
+</script>
 {% endblock %}

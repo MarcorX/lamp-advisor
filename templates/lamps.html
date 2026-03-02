@@ -4,15 +4,15 @@
 <div class="p-8">
   <div class="mb-6 flex items-center justify-between">
     <div>
-      <h2 class="text-2xl font-bold text-gray-900">Lamp Database</h2>
-      <p class="text-gray-500 mt-1">{{ total }} lamps in catalog</p>
+      <h2 class="text-2xl font-bold text-slate-900">Lamp Database</h2>
+      <p class="text-slate-500 mt-1">{{ total }} lamp{% if total != 1 %}s{% endif %} in catalog</p>
     </div>
     <div class="flex gap-3">
-      <a href="/lamps/import" class="text-sm bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
+      <a href="/lamps/import" class="btn-secondary flex items-center gap-2">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
         Import CSV
       </a>
-      <a href="/lamps/add" class="text-sm bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
+      <a href="/lamps/add" class="btn-primary flex items-center gap-2">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
         Add Lamp
       </a>
@@ -22,34 +22,33 @@
   <!-- Filters -->
   <form method="get" class="flex gap-3 mb-6">
     <input type="text" name="search" value="{{ search }}" placeholder="Search brand or model…"
-      class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"/>
-    <select name="category" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+      class="flex-1 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-amber-400 bg-white"/>
+    <select name="category" class="border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-amber-400 bg-white">
       <option value="">All categories</option>
       {% for cat in categories %}
       <option value="{{ cat }}" {% if cat == category %}selected{% endif %}>{{ cat | title }}</option>
       {% endfor %}
     </select>
-    <select name="level" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+    <select name="level" class="border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-amber-400 bg-white">
       <option value="">All levels</option>
       <option value="basic" {% if level == 'basic' %}selected{% endif %}>Basic</option>
       <option value="mid" {% if level == 'mid' %}selected{% endif %}>Mid</option>
       <option value="premium" {% if level == 'premium' %}selected{% endif %}>Premium</option>
       <option value="luxury" {% if level == 'luxury' %}selected{% endif %}>Luxury</option>
     </select>
-    <button type="submit" class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm transition-colors">Filter</button>
+    <button type="submit" class="btn-primary">Filter</button>
     {% if search or category or level %}
-    <a href="/lamps" class="border border-gray-300 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm transition-colors">Clear</a>
+    <a href="/lamps" class="btn-secondary">Clear</a>
     {% endif %}
   </form>
 
-  <!-- Table -->
   {% if lamps %}
-  <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+  <div class="card overflow-hidden">
     <div class="overflow-x-auto">
       <table class="w-full text-sm">
-        <thead class="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide border-b border-gray-200">
+        <thead class="bg-slate-50 text-xs text-slate-500 uppercase tracking-wide border-b border-slate-100">
           <tr>
-            <th class="text-left px-6 py-3">Brand / Model</th>
+            <th class="text-left px-5 py-3">Brand / Model</th>
             <th class="text-left px-4 py-3">Category</th>
             <th class="text-left px-4 py-3">Wattage</th>
             <th class="text-left px-4 py-3">Lumens</th>
@@ -61,36 +60,38 @@
             <th class="px-4 py-3"></th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-gray-100">
+        <tbody class="divide-y divide-slate-50">
           {% for lamp in lamps %}
-          <tr class="hover:bg-gray-50">
-            <td class="px-6 py-3">
-              <p class="font-medium text-gray-900">{{ lamp.brand }}</p>
-              <p class="text-gray-500">{{ lamp.model }}</p>
+          <tr class="hover:bg-slate-50 transition-colors">
+            <td class="px-5 py-3.5">
+              <p class="font-medium text-slate-900">{{ lamp.brand }}</p>
+              <p class="text-xs text-slate-400">{{ lamp.model }}</p>
             </td>
-            <td class="px-4 py-3 text-gray-500 capitalize">{{ lamp.category or '—' }}</td>
-            <td class="px-4 py-3 text-gray-600">{% if lamp.wattage %}{{ lamp.wattage }}W{% else %}—{% endif %}</td>
-            <td class="px-4 py-3 text-gray-600">{% if lamp.lumens %}{{ lamp.lumens }}lm{% else %}—{% endif %}</td>
-            <td class="px-4 py-3">
-              {% if lamp.color_temp %}<span class="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">{{ lamp.color_temp }}</span>{% else %}—{% endif %}
+            <td class="px-4 py-3.5">
+              <span class="badge bg-slate-100 text-slate-600 capitalize">{{ lamp.category or '—' }}</span>
             </td>
-            <td class="px-4 py-3 text-gray-600">{% if lamp.cri %}{{ lamp.cri }}{% else %}—{% endif %}</td>
-            <td class="px-4 py-3 text-gray-500">{{ lamp.ip_rating or '—' }}</td>
-            <td class="px-4 py-3">
-              <span class="text-xs px-2 py-0.5 rounded-full
+            <td class="px-4 py-3.5 text-slate-600">{{ lamp.wattage }}W{% if not lamp.wattage %}—{% endif %}</td>
+            <td class="px-4 py-3.5 text-slate-600">{{ lamp.lumens }}lm{% if not lamp.lumens %}—{% endif %}</td>
+            <td class="px-4 py-3.5">
+              {% if lamp.color_temp %}<span class="badge bg-orange-100 text-orange-700">{{ lamp.color_temp }}</span>{% else %}—{% endif %}
+            </td>
+            <td class="px-4 py-3.5 text-slate-600">{{ lamp.cri or '—' }}</td>
+            <td class="px-4 py-3.5 text-slate-500">{{ lamp.ip_rating or '—' }}</td>
+            <td class="px-4 py-3.5">
+              <span class="badge
                 {% if lamp.property_level == 'luxury' %}bg-purple-100 text-purple-700
                 {% elif lamp.property_level == 'premium' %}bg-blue-100 text-blue-700
-                {% elif lamp.property_level == 'mid' %}bg-green-100 text-green-700
-                {% else %}bg-gray-100 text-gray-600{% endif %}">
-                {{ lamp.property_level | title }}
+                {% elif lamp.property_level == 'mid' %}bg-emerald-100 text-emerald-700
+                {% else %}bg-slate-100 text-slate-600{% endif %}">
+                {{ lamp.property_level | title if lamp.property_level else '—' }}
               </span>
             </td>
-            <td class="px-4 py-3 text-right font-medium">{% if lamp.price_usd %}${{ "%.0f"|format(lamp.price_usd) }}{% else %}—{% endif %}</td>
-            <td class="px-4 py-3 text-right">
-              <div class="flex items-center justify-end gap-2">
-                <a href="/lamps/{{ lamp.id }}/edit" class="text-xs text-gray-500 hover:text-amber-600 transition-colors">Edit</a>
+            <td class="px-4 py-3.5 text-right font-semibold text-slate-900">{{ '$%d'|format(lamp.price_usd) if lamp.price_usd else '—' }}</td>
+            <td class="px-4 py-3.5">
+              <div class="flex items-center gap-3 justify-end">
+                <a href="/lamps/{{ lamp.id }}/edit" class="text-xs text-slate-400 hover:text-amber-600 transition-colors font-medium">Edit</a>
                 <form method="post" action="/lamps/{{ lamp.id }}/delete" onsubmit="return confirm('Delete this lamp?')">
-                  <button type="submit" class="text-xs text-gray-400 hover:text-red-500 transition-colors">Delete</button>
+                  <button type="submit" class="text-xs text-slate-300 hover:text-red-500 transition-colors">Delete</button>
                 </form>
               </div>
             </td>
@@ -100,16 +101,15 @@
       </table>
     </div>
 
-    <!-- Pagination -->
     {% if total > per_page %}
-    <div class="px-6 py-4 border-t border-gray-100 flex items-center justify-between text-sm text-gray-500">
+    <div class="px-6 py-4 border-t border-slate-100 flex items-center justify-between text-sm text-slate-500">
       <span>Showing {{ (page-1)*per_page+1 }}–{{ [page*per_page, total]|min }} of {{ total }}</span>
       <div class="flex gap-2">
         {% if page > 1 %}
-        <a href="?search={{ search }}&category={{ category }}&level={{ level }}&page={{ page-1 }}" class="px-3 py-1 border border-gray-200 rounded hover:bg-gray-50">Previous</a>
+        <a href="?search={{ search }}&category={{ category }}&level={{ level }}&page={{ page-1 }}" class="btn-secondary py-1.5">Previous</a>
         {% endif %}
         {% if page * per_page < total %}
-        <a href="?search={{ search }}&category={{ category }}&level={{ level }}&page={{ page+1 }}" class="px-3 py-1 border border-gray-200 rounded hover:bg-gray-50">Next</a>
+        <a href="?search={{ search }}&category={{ category }}&level={{ level }}&page={{ page+1 }}" class="btn-secondary py-1.5">Next</a>
         {% endif %}
       </div>
     </div>
@@ -117,9 +117,12 @@
   </div>
 
   {% else %}
-  <div class="bg-white rounded-xl border border-gray-200 p-12 text-center">
-    <p class="text-gray-400 text-lg mb-4">No lamps found</p>
-    <a href="/lamps/import" class="inline-block bg-amber-500 hover:bg-amber-600 text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors">Import Catalog</a>
+  <div class="card p-16 text-center">
+    <div class="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-300 mx-auto mb-4">
+      <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+    </div>
+    <p class="text-slate-500 mb-4">No lamps found</p>
+    <a href="/lamps/import" class="btn-primary">Import Catalog</a>
   </div>
   {% endif %}
 </div>

@@ -1,133 +1,168 @@
 {% extends "base.html" %}
 {% block title %}Proposals — {{ project.name }}{% endblock %}
 {% block content %}
-<div class="p-8">
+<div class="p-8 max-w-6xl" x-data="{ activeTab: 0 }">
 
+  <!-- Header -->
   <div class="mb-6 flex items-start justify-between">
     <div>
-      <div class="flex items-center gap-2 text-sm text-gray-500 mb-1">
-        <a href="/projects" class="hover:underline">Projects</a>
+      <div class="flex items-center gap-2 text-sm text-slate-400 mb-2">
+        <a href="/projects" class="hover:text-slate-600">Projects</a>
         <span>/</span>
-        <span>{{ project.name }}</span>
+        <a href="/projects/{{ project.id }}" class="hover:text-slate-600">{{ project.name }}</a>
+        <span>/</span>
+        <span class="text-slate-600">Proposals</span>
       </div>
-      <h2 class="text-2xl font-bold text-gray-900">Lighting Proposals</h2>
-      <p class="text-gray-500 mt-1">
-        {{ project.client_name or 'Client' }} · {{ project.property_type | title }} · {{ project.property_level | title }}
+      <h2 class="text-2xl font-bold text-slate-900">Lighting Proposals</h2>
+      <p class="text-slate-500 mt-1">
+        <span class="font-medium text-slate-700">{{ project.name }}</span>
+        {% if project.client_name %} · {{ project.client_name }}{% endif %}
+        · {{ project.property_type | title if project.property_type else '—' }}
+        · {{ project.property_level | title if project.property_level else '—' }}
         {% if project.total_sqm %} · {{ project.total_sqm }}m²{% endif %}
       </p>
     </div>
-    <a href="/projects/{{ project.id }}/recommend"
-      class="text-sm bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
+    <a href="/projects/{{ project.id }}/regenerate"
+      class="btn-secondary flex items-center gap-2">
       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
       Regenerate
     </a>
   </div>
 
   {% if error %}
-  <div class="mb-6 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-4">
-    <p class="font-semibold">Could not generate proposals</p>
-    <p class="text-sm mt-1">{{ error }}</p>
-    {% if 'lamp' in error.lower() %}
-    <a href="/lamps/import" class="inline-block mt-3 text-sm bg-red-100 hover:bg-red-200 text-red-800 px-3 py-1.5 rounded-lg transition-colors">Import Lamp Catalog →</a>
+  <div class="card p-6 border-red-200 bg-red-50 mb-6">
+    <p class="font-semibold text-red-800">Could not generate proposals</p>
+    <p class="text-sm text-red-600 mt-1">{{ error }}</p>
+    {% if 'lamp' in (error or '').lower() %}
+    <a href="/lamps/import" class="inline-block mt-3 btn-primary">Import Lamp Catalog →</a>
     {% endif %}
   </div>
   {% endif %}
 
   {% if proposals %}
-  <!-- Proposal Cards -->
-  <div class="grid grid-cols-1 gap-8">
+
+  <!-- Comparison Bar -->
+  <div class="grid grid-cols-3 gap-4 mb-6">
+    {% set tab_colors = ['amber', 'blue', 'purple'] %}
     {% for p in proposals %}
-    {% set colors = ['amber', 'blue', 'purple'] %}
-    {% set c = colors[loop.index0 % 3] %}
-    <div class="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
+    {% set c = tab_colors[loop.index0 % 3] %}
+    <button @click="activeTab = {{ loop.index0 }}"
+      class="card p-4 text-left transition-all hover:shadow-md"
+      :class="activeTab === {{ loop.index0 }} ? 'ring-2 ring-{{ c }}-400 shadow-md' : ''">
+      <div class="flex items-center justify-between mb-2">
+        <span class="badge bg-{{ c }}-100 text-{{ c }}-700">Option {{ p.proposal_number }}</span>
+        <span class="text-xs text-slate-400">{{ p.room_assignments|length }} rooms</span>
+      </div>
+      <p class="font-semibold text-slate-800 text-sm">{{ p.title }}</p>
+      <p class="text-2xl font-bold mt-1" :class="activeTab === {{ loop.index0 }} ? 'text-{{ c }}-600' : 'text-slate-900'">${{ "%.0f"|format(p.total_price) }}</p>
+      <p class="text-xs text-slate-400 mt-0.5">estimated total</p>
+    </button>
+    {% endfor %}
+  </div>
 
-      <!-- Header -->
-      <div class="bg-{{ c }}-50 border-b border-{{ c }}-100 px-6 py-4 flex items-center justify-between">
+  <!-- Tab Panels -->
+  {% for p in proposals %}
+  {% set c = tab_colors[loop.index0 % 3] %}
+  <div x-show="activeTab === {{ loop.index0 }}" x-cloak>
+
+    <!-- AI Justification -->
+    {% if p.ai_justification %}
+    <div class="card p-5 mb-5 border-{{ c }}-100 bg-{{ c }}-50">
+      <div class="flex items-start gap-3">
+        <div class="w-8 h-8 bg-{{ c }}-500 rounded-lg flex items-center justify-center text-white text-xs font-bold shrink-0">AI</div>
+        <div>
+          <p class="text-xs font-semibold text-{{ c }}-700 uppercase tracking-wide mb-1">AI Lighting Analysis</p>
+          <p class="text-sm text-slate-700 leading-relaxed">{{ p.ai_justification }}</p>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Room Assignment Table -->
+    <div class="card overflow-hidden mb-5">
+      <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+        <h3 class="font-semibold text-slate-900">Room-by-Room Specification</h3>
         <div class="flex items-center gap-3">
-          <span class="bg-{{ c }}-500 text-white text-xs font-bold px-2.5 py-1 rounded-full">
-            Option {{ p.proposal_number }}
-          </span>
-          <h3 class="font-bold text-gray-900 text-lg">{{ p.title }}</h3>
-        </div>
-        <div class="text-right">
-          <p class="text-2xl font-bold text-gray-900">${{ "%.0f"|format(p.total_price) }}</p>
-          <p class="text-xs text-gray-500">estimated total</p>
+          <span class="text-sm text-slate-500">Total: <span class="font-bold text-slate-900">${{ "%.0f"|format(p.total_price) }}</span></span>
+          {% if p.db_id is defined %}
+          <a href="/proposals/{{ p.db_id }}/print" target="_blank" class="btn-secondary flex items-center gap-1.5 text-xs py-1.5">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+            Print PDF
+          </a>
+          {% endif %}
         </div>
       </div>
 
-      <!-- AI Justification -->
-      {% if p.ai_justification %}
-      <div class="px-6 py-4 bg-gray-50 border-b border-gray-100">
-        <p class="text-sm text-gray-600 italic leading-relaxed">{{ p.ai_justification }}</p>
-      </div>
-      {% endif %}
-
-      <!-- Room Table -->
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
-          <thead class="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
+          <thead class="bg-slate-50 text-xs text-slate-500 uppercase tracking-wide">
             <tr>
-              <th class="text-left px-6 py-3">Room</th>
-              <th class="text-left px-6 py-3">Brand / Model</th>
+              <th class="text-left px-5 py-3">Room</th>
+              <th class="text-left px-4 py-3">Brand / Model</th>
               <th class="text-left px-4 py-3">Category</th>
-              <th class="text-left px-4 py-3">CCT</th>
-              <th class="text-left px-4 py-3">Lumens</th>
-              <th class="text-left px-4 py-3">CRI</th>
-              <th class="text-left px-4 py-3">Dim</th>
-              <th class="text-left px-4 py-3">IP</th>
-              <th class="text-right px-4 py-3">Qty</th>
-              <th class="text-right px-6 py-3">Subtotal</th>
+              <th class="text-left px-4 py-3">Specs</th>
+              <th class="text-left px-4 py-3">Qty</th>
+              <th class="text-right px-4 py-3">Unit</th>
+              <th class="text-right px-5 py-3">Subtotal</th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-gray-100">
+          <tbody class="divide-y divide-slate-50">
             {% for r in p.room_assignments %}
-            <tr class="hover:bg-gray-50">
-              <td class="px-6 py-3 font-medium text-gray-900 capitalize">{{ r.room }}</td>
-              <td class="px-6 py-3 text-gray-700">{{ r.lamp_brand }} <span class="text-gray-500">{{ r.lamp_model }}</span></td>
-              <td class="px-4 py-3 text-gray-500 capitalize">{{ r.lamp_category or '—' }}</td>
-              <td class="px-4 py-3">
-                {% if r.lamp_color_temp %}
-                <span class="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">{{ r.lamp_color_temp }}</span>
-                {% else %}—{% endif %}
+            <tr class="hover:bg-slate-50 transition-colors">
+              <td class="px-5 py-3.5">
+                <span class="font-medium text-slate-900 capitalize">{{ r.room }}</span>
               </td>
-              <td class="px-4 py-3 text-gray-600">{{ r.lamp_lumens or '—' }}{% if r.lamp_lumens %}lm{% endif %}</td>
-              <td class="px-4 py-3 text-gray-600">{{ r.lamp_cri or '—' }}{% if r.lamp_cri %}+{% endif %}</td>
-              <td class="px-4 py-3">
-                {% if r.lamp_dimmable %}
-                <span class="text-green-600 font-medium">Yes</span>
-                {% else %}
-                <span class="text-gray-400">No</span>
-                {% endif %}
+              <td class="px-4 py-3.5">
+                <p class="font-medium text-slate-800">{{ r.lamp_brand }}</p>
+                <p class="text-xs text-slate-400">{{ r.lamp_model }}</p>
               </td>
-              <td class="px-4 py-3 text-gray-500">{{ r.lamp_ip or '—' }}</td>
-              <td class="px-4 py-3 text-right font-medium">{{ r.quantity }}</td>
-              <td class="px-6 py-3 text-right font-semibold text-gray-900">
+              <td class="px-4 py-3.5">
+                <span class="badge bg-slate-100 text-slate-600 capitalize">{{ r.lamp_category or '—' }}</span>
+              </td>
+              <td class="px-4 py-3.5">
+                <div class="flex flex-wrap gap-1">
+                  {% if r.lamp_color_temp %}
+                  <span class="badge bg-orange-100 text-orange-700">{{ r.lamp_color_temp }}</span>
+                  {% endif %}
+                  {% if r.lamp_cri %}
+                  <span class="badge bg-blue-100 text-blue-700">CRI {{ r.lamp_cri }}</span>
+                  {% endif %}
+                  {% if r.lamp_lumens %}
+                  <span class="badge bg-slate-100 text-slate-600">{{ r.lamp_lumens }}lm</span>
+                  {% endif %}
+                  {% if r.lamp_dimmable %}
+                  <span class="badge bg-purple-100 text-purple-700">Dim</span>
+                  {% endif %}
+                  {% if r.lamp_ip and r.lamp_ip != 'IP20' %}
+                  <span class="badge bg-teal-100 text-teal-700">{{ r.lamp_ip }}</span>
+                  {% endif %}
+                </div>
+              </td>
+              <td class="px-4 py-3.5">
+                <span class="font-bold text-slate-900 text-base">{{ r.quantity }}</span>
+              </td>
+              <td class="px-4 py-3.5 text-right text-slate-500">
+                {% if r.lamp_price %}${{ "%.0f"|format(r.lamp_price) }}{% else %}—{% endif %}
+              </td>
+              <td class="px-5 py-3.5 text-right font-semibold text-slate-900">
                 {% if r.lamp_price %}${{ "%.0f"|format(r.subtotal) }}{% else %}—{% endif %}
               </td>
             </tr>
             {% endfor %}
           </tbody>
           <tfoot>
-            <tr class="bg-gray-50 font-semibold">
-              <td colspan="9" class="px-6 py-3 text-right text-gray-700">Total</td>
-              <td class="px-6 py-3 text-right text-lg text-gray-900">${{ "%.0f"|format(p.total_price) }}</td>
+            <tr class="bg-slate-900">
+              <td colspan="6" class="px-5 py-4 text-right text-sm font-semibold text-slate-300">TOTAL ESTIMATE</td>
+              <td class="px-5 py-4 text-right text-lg font-bold text-amber-400">${{ "%.0f"|format(p.total_price) }}</td>
             </tr>
           </tfoot>
         </table>
       </div>
-
-      <!-- Actions -->
-      <div class="px-6 py-4 flex gap-3 border-t border-gray-100">
-        <a href="/proposals/{{ loop.index }}/print?pid={{ project.id }}"
-          onclick="window.open(this.href,'_blank'); return false;"
-          class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
-          Print / PDF
-        </a>
-      </div>
     </div>
-    {% endfor %}
+
   </div>
+  {% endfor %}
+
   {% endif %}
 </div>
 {% endblock %}

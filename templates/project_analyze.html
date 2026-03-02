@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+{% block title %}Analyzing {{ project.name }} — LampAdvisor{% endblock %}
+{% block content %}
+<div class="p-8 max-w-2xl" x-data="analysisProgress('{{ session_id }}', {{ project.id }})">
+
+  <div class="mb-8">
+    <div class="flex items-center gap-2 text-sm text-slate-400 mb-2">
+      <a href="/projects" class="hover:text-slate-600">Projects</a>
+      <span>/</span>
+      <span class="text-slate-600">{{ project.name }}</span>
+    </div>
+    <h2 class="text-2xl font-bold text-slate-900">Analyzing Project</h2>
+    <p class="text-slate-500 mt-1">Claude is reading your floor plan and calculating lighting requirements…</p>
+  </div>
+
+  <!-- Project Info Card -->
+  <div class="card p-5 mb-6 flex items-center gap-4">
+    <div class="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600 text-lg font-bold">
+      {{ project.name[0].upper() }}
+    </div>
+    <div>
+      <p class="font-semibold text-slate-900">{{ project.name }}</p>
+      <p class="text-sm text-slate-500">
+        {{ project.client_name or 'No client' }} ·
+        {{ project.property_type | title if project.property_type else '—' }} ·
+        {{ project.property_level | title if project.property_level else '—' }}
+        {% if project.total_sqm %} · {{ project.total_sqm }}m²{% endif %}
+      </p>
+    </div>
+    <span class="ml-auto badge {% if project.file_type == 'manual' %}bg-slate-100 text-slate-500{% else %}bg-blue-100 text-blue-700{% endif %}">
+      {{ project.file_type | upper }}
+    </span>
+  </div>
+
+  <!-- Progress Steps -->
+  <div class="card p-6 mb-6">
+    <div class="flex items-center justify-between mb-5">
+      <h3 class="font-semibold text-slate-800">Analysis Pipeline</h3>
+      <span x-show="!allDone" class="text-xs text-amber-600 font-medium flex items-center gap-1.5">
+        <span class="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
+        Running…
+      </span>
+      <span x-show="allDone && !hasError" class="text-xs text-emerald-600 font-medium flex items-center gap-1.5">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        Complete
+      </span>
+    </div>
+
+    <!-- Progress Bar -->
+    <div class="w-full bg-slate-100 rounded-full h-1.5 mb-6">
+      <div class="bg-amber-500 h-1.5 rounded-full transition-all duration-700" :style="`width: ${totalProgress}%`"></div>
+    </div>
+
+    <!-- Step List -->
+    <div class="space-y-3">
+      <template x-for="(step, i) in steps" :key="i">
+        <div class="flex items-start gap-3">
+          <div class="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 transition-all"
+               :class="{
+                 'bg-emerald-100 text-emerald-600': step.state === 'done',
+                 'bg-amber-100 text-amber-600 shadow-sm shadow-amber-200': step.state === 'active',
+                 'bg-slate-100 text-slate-400': step.state === 'pending',
+                 'bg-red-100 text-red-500': step.state === 'error',
+               }">
+            <svg x-show="step.state === 'done'" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+            <svg x-show="step.state === 'active'" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            <svg x-show="step.state === 'error'" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            <span x-show="step.state === 'pending'" class="w-2 h-2 bg-slate-300 rounded-full"></span>
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium"
+               :class="{
+                 'text-emerald-700': step.state === 'done',
+                 'text-amber-700': step.state === 'active',
+                 'text-slate-400': step.state === 'pending',
+                 'text-red-600': step.state === 'error',
+               }"
+               x-text="step.label"></p>
+            <p x-show="step.detail" class="text-xs text-slate-400 mt-0.5 truncate" x-text="step.detail"></p>
+          </div>
+          <span x-show="step.state === 'active'" class="text-xs text-amber-500 font-medium shrink-0">In progress</span>
+          <span x-show="step.state === 'done'" class="text-xs text-emerald-500 shrink-0">Done</span>
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- Live Log -->
+  <div class="card p-0 overflow-hidden mb-6">
+    <div class="px-4 py-3 bg-slate-900 flex items-center justify-between">
+      <p class="text-xs text-slate-400 font-mono font-semibold">LIVE LOG</p>
+      <span class="w-2 h-2 bg-emerald-400 rounded-full animate-pulse"></span>
+    </div>
+    <div id="liveLog" class="bg-slate-950 px-4 py-3 h-40 overflow-y-auto font-mono text-xs">
+      <template x-for="(line, i) in logLines" :key="i">
+        <div class="leading-6">
+          <span class="text-slate-600 select-none">{{ '>' }}</span>
+          <span :class="line.startsWith('✓') ? 'text-emerald-400' : line.startsWith('Error') ? 'text-red-400' : line.includes('AI') || line.includes('Claude') ? 'text-amber-400' : 'text-slate-300'"
+                x-text="' ' + line"></span>
+        </div>
+      </template>
+      <div x-show="!allDone" class="text-amber-500 animate-pulse">_</div>
+    </div>
+  </div>
+
+  <!-- CTA when done -->
+  <div x-show="allDone && !hasError" x-cloak
+    class="card p-6 border-emerald-200 bg-emerald-50 flex items-center gap-4">
+    <div class="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center text-white">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+    </div>
+    <div class="flex-1">
+      <p class="font-semibold text-emerald-900">Proposals are ready!</p>
+      <p class="text-sm text-emerald-700">3 lighting proposals generated with AI justification.</p>
+    </div>
+    <a :href="redirectUrl" class="btn-primary flex items-center gap-2 py-2.5">
+      View Proposals
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+    </a>
+  </div>
+
+  <!-- Warning: no lamps -->
+  <div x-show="hasWarning === 'no_lamps'" x-cloak class="card p-5 border-amber-200 bg-amber-50">
+    <p class="font-semibold text-amber-900">Project analyzed — but no lamps in catalog</p>
+    <p class="text-sm text-amber-700 mt-1">Import your lamp catalog first, then come back to generate proposals.</p>
+    <a href="/lamps/import" class="inline-block mt-3 btn-primary">Import Catalog →</a>
+  </div>
+
+  <!-- Error -->
+  <div x-show="hasError" x-cloak class="card p-5 border-red-200 bg-red-50">
+    <p class="font-semibold text-red-800">Analysis encountered an error</p>
+    <p class="text-sm text-red-600 mt-1" x-text="errorMsg"></p>
+    <a :href="`/projects/{{ project.id }}`" class="inline-block mt-3 btn-secondary">View Project →</a>
+  </div>
+
+</div>
+
+<script>
+function analysisProgress(sessionId, projectId) {
+  return {
+    totalProgress: 0,
+    allDone: false,
+    hasError: false,
+    hasWarning: null,
+    errorMsg: '',
+    redirectUrl: `/projects/${projectId}/proposals`,
+    logLines: [`Starting analysis for project #${projectId}…`],
+    steps: [
+      { label: 'Uploading & saving file', detail: '', state: 'done' },
+      { label: 'Extracting text from document', detail: '', state: 'pending' },
+      { label: 'Claude AI reads floor plan', detail: 'Visual analysis of layout & spaces', state: 'pending' },
+      { label: 'Calculating lighting requirements', detail: 'Lux targets, fixture counts per room', state: 'pending' },
+      { label: 'Matching lamp catalog', detail: 'Filtering by level, CCT, category', state: 'pending' },
+      { label: 'Generating AI proposals', detail: 'Writing justification narratives', state: 'pending' },
+    ],
+    stepKeyMap: {
+      'start': 1, 'extract': 1, 'extracting': 1,
+      'images': 2, 'ai': 2, 'fallback': 2,
+      'calculating': 3,
+      'matching': 4,
+      'ai_narrative': 5, 'saving': 5,
+    },
+    currentStepIdx: 0,
+
+    init() {
+      if (!sessionId) {
+        // No session (manual project) — just redirect
+        this.allDone = true;
+        this.totalProgress = 100;
+        this.steps.forEach(s => s.state = 'done');
+        return;
+      }
+      this.steps[0].state = 'done';
+      this.watchProgress(sessionId);
+    },
+
+    watchProgress(sid) {
+      const es = new EventSource(`/stream/${sid}`);
+      es.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+
+        if (data.msg) {
+          this.logLines.push(data.msg);
+          this.$nextTick(() => {
+            const el = document.getElementById('liveLog');
+            if (el) el.scrollTop = el.scrollHeight;
+          });
+        }
+
+        if (data.progress) this.totalProgress = Math.max(this.totalProgress, data.progress);
+
+        // Advance steps
+        const si = this.stepKeyMap[data.step];
+        if (si !== undefined) {
+          this.steps.forEach((s, i) => {
+            if (i < si) s.state = 'done';
+            else if (i === si) { s.state = 'active'; s.detail = data.msg || s.detail; }
+          });
+        }
+
+        if (data.done) {
+          es.close();
+          this.allDone = true;
+          this.totalProgress = 100;
+
+          if (data.step === 'error') {
+            this.hasError = true;
+            this.errorMsg = data.msg || 'Unknown error';
+            this.steps.forEach(s => { if (s.state === 'active') s.state = 'error'; });
+          } else {
+            this.steps.forEach(s => s.state = 'done');
+            if (data.warning) this.hasWarning = data.warning;
+            if (data.redirect) {
+              this.redirectUrl = data.redirect;
+              // Auto-redirect after 2s
+              setTimeout(() => { window.location.href = data.redirect; }, 2000);
+            }
+          }
+        }
+      };
+      es.onerror = () => {
+        es.close();
+        if (!this.allDone) {
+          this.logLines.push('Connection lost — please check the project page.');
+          this.allDone = true;
+          this.hasError = true;
+          this.errorMsg = 'SSE connection dropped.';
+        }
+      };
+    }
+  }
+}
+</script>
+{% endblock %}

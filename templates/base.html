@@ -1,78 +1,244 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" x-data="chatPanel()">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>{% block title %}LampAdvisor{% endblock %}</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <script>
     tailwind.config = {
       theme: {
         extend: {
           colors: {
-            brand: { 50:'#fffbeb', 100:'#fef3c7', 500:'#f59e0b', 600:'#d97706', 700:'#b45309', 900:'#78350f' }
+            brand: { 400:'#fbbf24', 500:'#f59e0b', 600:'#d97706' }
           }
         }
       }
     }
   </script>
   <style>
-    [x-cloak] { display: none; }
-    .sidebar-link { @apply flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors; }
-    .sidebar-link:hover { @apply bg-amber-50 text-amber-700; }
-    .sidebar-link.active { @apply bg-amber-100 text-amber-800; }
+    [x-cloak] { display: none !important; }
+    .nav-link { @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-400 transition-all duration-150; }
+    .nav-link:hover { @apply bg-slate-800 text-slate-100; }
+    .nav-link.active { @apply bg-slate-800 text-amber-400 border-l-2 border-amber-400 pl-[10px]; }
+    .card { @apply bg-white rounded-2xl border border-slate-100 shadow-sm; }
+    .btn-primary { @apply bg-amber-500 hover:bg-amber-600 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm; }
+    .btn-secondary { @apply border border-slate-200 hover:bg-slate-50 text-slate-700 font-medium px-4 py-2 rounded-lg transition-colors text-sm; }
+    .badge { @apply text-xs font-medium px-2.5 py-0.5 rounded-full; }
+    .chat-bubble-user { @apply bg-amber-500 text-white rounded-2xl rounded-br-sm px-4 py-2.5 max-w-xs text-sm; }
+    .chat-bubble-ai { @apply bg-white border border-slate-200 text-slate-700 rounded-2xl rounded-bl-sm px-4 py-2.5 max-w-sm text-sm shadow-sm; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
   </style>
 </head>
-<body class="bg-gray-50 text-gray-800 min-h-screen flex">
 
-  <!-- Sidebar -->
-  <aside class="w-64 bg-white border-r border-gray-200 flex flex-col shrink-0 min-h-screen">
-    <div class="px-6 py-5 border-b border-gray-200">
-      <div class="flex items-center gap-2">
-        <span class="text-2xl">💡</span>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex overflow-hidden">
+
+  <!-- ====== SIDEBAR ====== -->
+  <aside class="w-60 bg-slate-900 flex flex-col shrink-0 h-screen sticky top-0">
+
+    <!-- Logo -->
+    <div class="px-5 py-5 border-b border-slate-800">
+      <a href="/" class="flex items-center gap-2.5">
+        <div class="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center text-white font-bold text-sm">LA</div>
         <div>
-          <h1 class="font-bold text-gray-900 text-lg leading-tight">LampAdvisor</h1>
-          <p class="text-xs text-gray-500">Lighting Proposal System</p>
+          <p class="text-white font-bold text-sm leading-tight">LampAdvisor</p>
+          <p class="text-slate-500 text-xs">AI Lighting Proposals</p>
         </div>
-      </div>
-    </div>
-    <nav class="flex-1 px-3 py-4 space-y-1">
-      <a href="/" class="sidebar-link {% if request.url.path == '/' %}active{% endif %}">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
-        Dashboard
       </a>
-      <a href="/projects/new" class="sidebar-link {% if '/projects/new' in request.url.path %}active{% endif %}">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+
+      <p class="text-slate-600 text-xs uppercase tracking-wider px-3 pt-2 pb-1 font-semibold">Projects</p>
+
+      <a href="/projects/new" class="nav-link {% if '/projects/new' in request.url.path %}active{% endif %}">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
         New Project
       </a>
-      <a href="/projects" class="sidebar-link {% if request.url.path == '/projects' %}active{% endif %}">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
-        Projects
+      <a href="/projects" class="nav-link {% if request.url.path == '/projects' %}active{% endif %}">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+        All Projects
       </a>
-      <hr class="my-2 border-gray-100"/>
-      <a href="/lamps" class="sidebar-link {% if request.url.path == '/lamps' %}active{% endif %}">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+
+      <p class="text-slate-600 text-xs uppercase tracking-wider px-3 pt-4 pb-1 font-semibold">Catalog</p>
+
+      <a href="/lamps" class="nav-link {% if request.url.path == '/lamps' %}active{% endif %}">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
         Lamp Database
       </a>
-      <a href="/lamps/import" class="sidebar-link {% if '/lamps/import' in request.url.path %}active{% endif %}">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+      <a href="/lamps/import" class="nav-link {% if '/lamps/import' in request.url.path %}active{% endif %}">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
         Import Catalog
+        <span class="ml-auto text-xs bg-amber-500 text-white px-1.5 py-0.5 rounded font-bold">AI</span>
       </a>
-      <a href="/lamps/add" class="sidebar-link {% if '/lamps/add' in request.url.path %}active{% endif %}">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+      <a href="/lamps/add" class="nav-link {% if '/lamps/add' in request.url.path %}active{% endif %}">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
         Add Lamp
       </a>
+
+      <p class="text-slate-600 text-xs uppercase tracking-wider px-3 pt-4 pb-1 font-semibold">Tools</p>
+
+      <a href="/chat" class="nav-link {% if request.url.path == '/chat' %}active{% endif %}">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+        AI Chat
+        <span class="ml-auto text-xs bg-amber-500 text-white px-1.5 py-0.5 rounded font-bold">AI</span>
+      </a>
+      <a href="/" class="nav-link {% if request.url.path == '/' %}active{% endif %}">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+        Dashboard
+      </a>
     </nav>
-    <div class="px-4 py-4 border-t border-gray-200 text-xs text-gray-400">
-      <p>LampAdvisor v1.0</p>
+
+    <div class="px-4 py-3 border-t border-slate-800">
+      <p class="text-slate-600 text-xs">LampAdvisor v2.0</p>
     </div>
   </aside>
 
-  <!-- Main content -->
-  <main class="flex-1 overflow-auto">
+  <!-- ====== MAIN CONTENT ====== -->
+  <main class="flex-1 overflow-auto h-screen">
     {% block content %}{% endblock %}
   </main>
 
+  <!-- ====== FLOATING CHAT BUTTON ====== -->
+  <button @click="open = !open"
+    class="fixed bottom-6 right-6 z-50 w-14 h-14 bg-amber-500 hover:bg-amber-600 text-white rounded-full shadow-lg flex items-center justify-center transition-all duration-200"
+    :class="open ? 'rotate-45' : ''"
+    title="AI Chat">
+    <svg x-show="!open" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+    <svg x-show="open" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+  </button>
+
+  <!-- ====== CHAT PANEL ====== -->
+  <div x-show="open" x-cloak
+    x-transition:enter="transition ease-out duration-200"
+    x-transition:enter-start="translate-x-full opacity-0"
+    x-transition:enter-end="translate-x-0 opacity-100"
+    x-transition:leave="transition ease-in duration-150"
+    x-transition:leave-start="translate-x-0 opacity-100"
+    x-transition:leave-end="translate-x-full opacity-0"
+    class="fixed bottom-24 right-6 z-50 w-96 h-[560px] bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
+
+    <!-- Chat Header -->
+    <div class="bg-slate-900 px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <div class="w-7 h-7 bg-amber-500 rounded-full flex items-center justify-center text-white text-xs font-bold">AI</div>
+        <div>
+          <p class="text-white text-sm font-semibold">LampAdvisor AI</p>
+          <p class="text-slate-400 text-xs">Ask anything about your catalog</p>
+        </div>
+      </div>
+      <button @click="open = false" class="text-slate-400 hover:text-white transition-colors">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <!-- Messages -->
+    <div class="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50" id="chatMessages">
+      <template x-for="msg in messages" :key="msg.id">
+        <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
+          <div :class="msg.role === 'user' ? 'chat-bubble-user' : 'chat-bubble-ai'"
+               x-html="formatMsg(msg.content)"></div>
+        </div>
+      </template>
+      <div x-show="loading" class="flex justify-start">
+        <div class="chat-bubble-ai flex items-center gap-1.5">
+          <span class="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style="animation-delay:0ms"></span>
+          <span class="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style="animation-delay:150ms"></span>
+          <span class="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style="animation-delay:300ms"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Suggested prompts (shown when empty) -->
+    <div x-show="messages.length === 0" class="px-3 pb-2">
+      <p class="text-xs text-slate-400 mb-2 px-1">Try asking:</p>
+      <div class="flex flex-wrap gap-1.5">
+        <button @click="sendSuggestion('What lamps do I have for luxury residential?')" class="text-xs bg-white border border-slate-200 hover:border-amber-400 hover:text-amber-600 px-2.5 py-1 rounded-full transition-colors">Luxury residential</button>
+        <button @click="sendSuggestion('Show me dimmable pendants under $100')" class="text-xs bg-white border border-slate-200 hover:border-amber-400 hover:text-amber-600 px-2.5 py-1 rounded-full transition-colors">Dimmable pendants</button>
+        <button @click="sendSuggestion('How many lamps for a 25m² living room?')" class="text-xs bg-white border border-slate-200 hover:border-amber-400 hover:text-amber-600 px-2.5 py-1 rounded-full transition-colors">Lamp count calc</button>
+        <button @click="sendSuggestion('What is my catalog summary?')" class="text-xs bg-white border border-slate-200 hover:border-amber-400 hover:text-amber-600 px-2.5 py-1 rounded-full transition-colors">Catalog summary</button>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div class="px-3 py-3 border-t border-slate-100 bg-white">
+      <form @submit.prevent="sendMessage" class="flex gap-2">
+        <input x-model="input" type="text" placeholder="Ask about lamps, projects, specs…"
+          :disabled="loading"
+          class="flex-1 text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:border-amber-400 disabled:opacity-50 bg-slate-50"/>
+        <button type="submit" :disabled="loading || !input.trim()"
+          class="bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-white px-3 py-2 rounded-xl transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    function chatPanel() {
+      return {
+        open: false,
+        input: '',
+        loading: false,
+        messages: [],
+        history: [],
+
+        async sendMessage() {
+          const msg = this.input.trim();
+          if (!msg || this.loading) return;
+          this.input = '';
+          this.addMessage('user', msg);
+          await this.callAPI(msg);
+        },
+
+        async sendSuggestion(text) {
+          this.addMessage('user', text);
+          await this.callAPI(text);
+        },
+
+        addMessage(role, content) {
+          this.messages.push({ id: Date.now(), role, content });
+          this.$nextTick(() => {
+            const el = document.getElementById('chatMessages');
+            if (el) el.scrollTop = el.scrollHeight;
+          });
+        },
+
+        async callAPI(message) {
+          this.loading = true;
+          try {
+            const res = await fetch('/api/chat', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({ message, history: this.history }),
+            });
+            const data = await res.json();
+            const reply = data.response || 'No response.';
+            this.history.push({ role: 'user', content: message });
+            this.history.push({ role: 'assistant', content: reply });
+            if (this.history.length > 20) this.history = this.history.slice(-20);
+            this.addMessage('assistant', reply);
+          } catch(e) {
+            this.addMessage('assistant', 'Sorry, something went wrong. Please try again.');
+          }
+          this.loading = false;
+        },
+
+        formatMsg(text) {
+          // Basic markdown: bold, newlines, bullet points
+          return text
+            .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+            .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
+            .replace(/\*(.*?)\*/g,'<em>$1</em>')
+            .replace(/\n/g,'<br>')
+            .replace(/^- (.+)/gm,'<span class="flex gap-1"><span>•</span><span>$1</span></span>');
+        }
+      }
+    }
+  </script>
 </body>
 </html>

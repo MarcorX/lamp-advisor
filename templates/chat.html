@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}AI Chat — LampAdvisor{% endblock %}
+{% block content %}
+<div class="flex h-screen" x-data="fullChat()">
+
+  <!-- Chat Main -->
+  <div class="flex-1 flex flex-col min-w-0">
+
+    <!-- Header -->
+    <div class="px-6 py-4 border-b border-slate-100 bg-white flex items-center justify-between shrink-0">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 bg-slate-900 rounded-xl flex items-center justify-center text-amber-400 text-xs font-bold">AI</div>
+        <div>
+          <p class="font-semibold text-slate-900">LampAdvisor AI</p>
+          <p class="text-xs text-slate-400">Powered by Claude · {{ lamp_count }} lamps in catalog</p>
+        </div>
+      </div>
+      <button @click="clearChat" class="btn-secondary text-xs py-1.5">Clear chat</button>
+    </div>
+
+    <!-- Messages -->
+    <div class="flex-1 overflow-y-auto px-6 py-6 space-y-4 bg-slate-50" id="fullChatMessages">
+
+      <!-- Welcome message -->
+      <div x-show="messages.length === 0" class="max-w-2xl mx-auto">
+        <div class="text-center mb-8">
+          <div class="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center text-amber-400 font-bold text-xl mx-auto mb-4">LA</div>
+          <h3 class="text-xl font-bold text-slate-900">LampAdvisor AI</h3>
+          <p class="text-slate-500 mt-1">Ask me anything about your lamp catalog, lighting requirements, or projects.</p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          {% for prompt in [
+            ('Luxury residential lamps', 'What lamps do I have for a luxury residential project?'),
+            ('Office lighting requirements', 'What CCT and lux level do I need for an open office?'),
+            ('Outdoor IP rating', 'Which lamps are suitable for outdoor use?'),
+            ('Bedroom lamp count', 'How many downlights do I need for a 20m² bedroom?'),
+            ('Premium pendants', 'Show me premium pendants under $200'),
+            ('Catalog summary', 'Give me a summary of my entire lamp catalog'),
+          ] %}
+          <button @click="sendSuggestion('{{ prompt[1] }}')"
+            class="card p-4 text-left hover:shadow-md hover:border-amber-200 transition-all text-sm">
+            <p class="font-medium text-slate-800">{{ prompt[0] }}</p>
+            <p class="text-slate-400 text-xs mt-0.5 line-clamp-2">{{ prompt[1] }}</p>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- Message List -->
+      <template x-for="msg in messages" :key="msg.id">
+        <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start gap-3 max-w-3xl'">
+
+          <!-- AI Avatar -->
+          <div x-show="msg.role === 'assistant'" class="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center text-amber-400 text-xs font-bold shrink-0 mt-1">AI</div>
+
+          <!-- Bubble -->
+          <div :class="msg.role === 'user'
+              ? 'bg-amber-500 text-white rounded-2xl rounded-br-sm px-5 py-3 max-w-md text-sm'
+              : 'bg-white border border-slate-200 text-slate-800 rounded-2xl rounded-bl-sm px-5 py-3 shadow-sm text-sm max-w-2xl'"
+               x-html="formatMsg(msg.content)">
+          </div>
+        </div>
+      </template>
+
+      <!-- Typing indicator -->
+      <div x-show="loading" class="flex gap-3">
+        <div class="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center text-amber-400 text-xs font-bold shrink-0">AI</div>
+        <div class="bg-white border border-slate-200 rounded-2xl rounded-bl-sm px-5 py-3 shadow-sm flex items-center gap-1.5">
+          <span class="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style="animation-delay:0ms"></span>
+          <span class="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style="animation-delay:120ms"></span>
+          <span class="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style="animation-delay:240ms"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div class="px-6 py-4 border-t border-slate-100 bg-white shrink-0">
+      <form @submit.prevent="sendMessage" class="flex gap-3 max-w-4xl mx-auto">
+        <input x-model="input" type="text"
+          placeholder="Ask about lamps, lighting requirements, projects…"
+          :disabled="loading"
+          class="flex-1 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-200 disabled:opacity-50 bg-slate-50"/>
+        <button type="submit" :disabled="loading || !input.trim()"
+          class="bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-white px-5 py-3 rounded-xl transition-colors flex items-center gap-2 text-sm font-medium">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+          Send
+        </button>
+      </form>
+      <p class="text-center text-xs text-slate-400 mt-2">Powered by Claude AI · responses may not be 100% accurate</p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function fullChat() {
+  return {
+    input: '',
+    loading: false,
+    messages: [],
+    history: [],
+
+    async sendMessage() {
+      const msg = this.input.trim();
+      if (!msg || this.loading) return;
+      this.input = '';
+      this.addMsg('user', msg);
+      await this.call(msg);
+    },
+
+    async sendSuggestion(text) {
+      this.addMsg('user', text);
+      await this.call(text);
+    },
+
+    addMsg(role, content) {
+      this.messages.push({ id: Date.now() + Math.random(), role, content });
+      this.$nextTick(() => {
+        const el = document.getElementById('fullChatMessages');
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+    },
+
+    async call(message) {
+      this.loading = true;
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message, history: this.history }),
+        });
+        const data = await res.json();
+        const reply = data.response || 'No response.';
+        this.history.push({ role: 'user', content: message });
+        this.history.push({ role: 'assistant', content: reply });
+        if (this.history.length > 30) this.history = this.history.slice(-30);
+        this.addMsg('assistant', reply);
+      } catch(e) {
+        this.addMsg('assistant', '⚠️ Error: ' + e.message);
+      }
+      this.loading = false;
+    },
+
+    clearChat() {
+      this.messages = [];
+      this.history = [];
+    },
+
+    formatMsg(text) {
+      return text
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g,'<em>$1</em>')
+        .replace(/`([^`]+)`/g,'<code class="bg-slate-100 text-amber-700 px-1 rounded text-xs">$1</code>')
+        .replace(/\n\n/g,'<br><br>')
+        .replace(/\n/g,'<br>')
+        .replace(/^- (.+)/gm,'<span class="flex gap-1 my-0.5"><span class="text-amber-500 shrink-0">•</span><span>$1</span></span>');
+    }
+  }
+}
+</script>
+{% endblock %}
