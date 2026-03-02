@@ -77,8 +77,10 @@ def run_import(file_path: str, db: Session, session_id: str, loop: asyncio.Abstr
         api_key = os.getenv("ANTHROPIC_API_KEY", "")
         lamps_data = []
 
-        if api_key and not api_key.startswith("your_"):
-            lamps_data = _ai_map(raw_text, api_key, emit)
+        from services.ai_client import get_client
+        ai = get_client()
+        if ai.is_configured():
+            lamps_data = _ai_map(raw_text, ai, emit)
         else:
             emit("mapping", "No API key — using column name heuristics…", 35)
             if isinstance(df_preview, list):
@@ -101,12 +103,9 @@ def run_import(file_path: str, db: Session, session_id: str, loop: asyncio.Abstr
         return 0
 
 
-def _ai_map(raw_text: str, api_key: str, emit) -> list[dict]:
-    """Ask Claude to map the raw catalog data to the lamp schema."""
+def _ai_map(raw_text: str, ai, emit) -> list[dict]:
+    """Ask AI to map the raw catalog data to the lamp schema."""
     try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
-
         prompt = f"""You are a data engineer. Below is raw product catalog data.
 Map EVERY product to the JSON schema and return a JSON array.
 If a field is missing or unclear, use null.
@@ -120,13 +119,11 @@ TARGET SCHEMA:
 CATALOG DATA:
 {raw_text[:12000]}"""
 
-        emit("mapping", "Waiting for Claude response…", 50)
-        msg = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=8000,
+        emit("mapping", f"Sending to {ai.provider} ({ai.model})…", 50)
+        content = ai.complete(
             messages=[{"role": "user", "content": prompt}],
+            max_tokens=8000,
         )
-        content = msg.content[0].text.strip()
 
         # Strip markdown fences if present
         if "```json" in content:

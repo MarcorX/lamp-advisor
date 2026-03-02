@@ -27,6 +27,7 @@ import services.progress as progress
 from services.ai_catalog_importer import run_import
 from services.ai_project_analyzer import run_analysis
 from services.chat_handler import handle_message
+from services.ai_settings import load as load_settings, save as save_settings, provider_models
 
 # ---------------------------------------------------------------------------
 # Setup
@@ -50,45 +51,60 @@ def on_startup():
 # ---------------------------------------------------------------------------
 @app.get("/api/status")
 async def api_status():
-    """Tests the Anthropic API key and returns connection status."""
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    """Tests the configured AI provider and returns connection status."""
+    s = load_settings()
+    provider = s.get("provider", "anthropic")
+    model    = s.get("model", "")
+    api_key  = s.get("api_key", "")
+    base_url = s.get("base_url", "")
 
-    if not api_key or api_key.startswith("your_"):
+    if provider != "local" and (not api_key or api_key.startswith("your_")):
         return JSONResponse({
-            "anthropic": "missing",
-            "message": "No API key set in .env file",
-            "model": None,
+            "status": "missing",
+            "provider": provider,
+            "message": f"No API key set for {provider}",
+            "model": model,
         })
 
     try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
-        msg = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=10,
-            messages=[{"role": "user", "content": "ping"}],
+        from services.ai_client import AIClient
+        test_model = model
+
+        # Use cheapest/fastest model for the ping
+        if provider == "anthropic":
+            test_model = "claude-haiku-4-5-20251001"
+        elif provider == "openai":
+            test_model = "gpt-4o-mini"
+
+        client = AIClient(provider=provider, model=test_model,
+                          api_key=api_key, base_url=base_url)
+        reply = await asyncio.to_thread(
+            client.complete,
+            [{"role": "user", "content": "Reply with the single word: pong"}],
+            "", 20,
         )
+        key_preview = f"{api_key[:8]}…{api_key[-4:]}" if api_key else "none"
         return JSONResponse({
-            "anthropic": "ok",
-            "message": "Connected — API key is valid",
-            "model": msg.model,
-            "key_preview": f"{api_key[:8]}…{api_key[-4:]}",
+            "status": "ok",
+            "provider": provider,
+            "message": f"Connected — {provider} responded",
+            "model": model,
+            "test_model": test_model,
+            "key_preview": key_preview,
+            "reply": reply.strip()[:40],
         })
     except Exception as e:
         err = str(e)
         if "401" in err or "authentication" in err.lower() or "invalid" in err.lower():
-            status = "invalid_key"
-            msg = "API key is invalid or revoked"
+            code, msg = "invalid_key", "API key is invalid or revoked"
         elif "403" in err:
-            status = "no_permission"
-            msg = "API key lacks permission for this model"
-        elif "connection" in err.lower() or "network" in err.lower():
-            status = "network_error"
-            msg = "Cannot reach Anthropic — check internet connection"
+            code, msg = "no_permission", "API key lacks permission"
+        elif "connection" in err.lower() or "network" in err.lower() or "refused" in err.lower():
+            code, msg = "network_error", f"Cannot reach {provider} — check URL/internet"
         else:
-            status = "error"
-            msg = err[:120]
-        return JSONResponse({"anthropic": status, "message": msg, "model": None}, status_code=200)
+            code, msg = "error", err[:120]
+        return JSONResponse({"status": code, "provider": provider,
+                             "message": msg, "model": model})
 
 
 # ---------------------------------------------------------------------------
@@ -583,6 +599,31 @@ def print_proposal(proposal_id: int, request: Request, db: Session = Depends(get
     return templates.TemplateResponse("proposal_print.html", {
         "request": request, "proposal": proposal, "project": project, "lamps": lamps
     })
+
+
+# ---------------------------------------------------------------------------
+# Settings
+# ---------------------------------------------------------------------------
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request):
+    s = load_settings()
+    return templates.TemplateResponse("settings.html", {
+        "request": request,
+        "settings": s,
+        "provider_models": provider_models(),
+    })
+
+
+@app.post("/settings")
+async def settings_save(
+    request: Request,
+    provider:  str = Form("anthropic"),
+    model:     str = Form(""),
+    api_key:   str = Form(""),
+    base_url:  str = Form(""),
+):
+    save_settings(provider=provider, model=model, api_key=api_key, base_url=base_url)
+    return RedirectResponse("/settings?saved=1", status_code=303)
 
 
 # ---------------------------------------------------------------------------

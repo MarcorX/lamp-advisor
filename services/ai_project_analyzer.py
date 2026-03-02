@@ -57,13 +57,14 @@ def run_analysis(file_path: str, session_id: str, loop: asyncio.AbstractEventLoo
 
     try:
         ext = Path(file_path).suffix.lower()
-        api_key = os.getenv("ANTHROPIC_API_KEY", "")
+        from services.ai_client import get_client
+        ai = get_client()
 
-        if api_key and not api_key.startswith("your_"):
+        if ai.is_configured():
             if ext == ".pdf":
-                return _analyze_pdf_with_ai(file_path, api_key, emit)
+                return _analyze_pdf_with_ai(file_path, ai, emit)
             elif ext in (".dwg", ".dxf"):
-                return _analyze_cad_with_ai(file_path, api_key, emit)
+                return _analyze_cad_with_ai(file_path, ai, emit)
         else:
             emit("fallback", "No API key — using text extraction…", 20)
 
@@ -89,7 +90,7 @@ def run_analysis(file_path: str, session_id: str, loop: asyncio.AbstractEventLoo
         return {}
 
 
-def _analyze_pdf_with_ai(file_path: str, api_key: str, emit) -> dict:
+def _analyze_pdf_with_ai(file_path: str, ai, emit) -> dict:
     import pdfplumber
 
     emit("extract", "Extracting text from PDF…", 15)
@@ -120,10 +121,10 @@ def _analyze_pdf_with_ai(file_path: str, api_key: str, emit) -> dict:
     except Exception as e:
         emit("images", f"Image extraction skipped ({e})", 45)
 
-    return _call_claude_vision(raw_text, images_b64, api_key, emit)
+    return _call_ai_vision(raw_text, images_b64, ai, emit)
 
 
-def _analyze_cad_with_ai(file_path: str, api_key: str, emit) -> dict:
+def _analyze_cad_with_ai(file_path: str, ai, emit) -> dict:
     emit("extract", "Parsing DWG/DXF file…", 15)
     try:
         import ezdxf
@@ -164,41 +165,24 @@ def _analyze_cad_with_ai(file_path: str, api_key: str, emit) -> dict:
         emit("error", f"CAD parsing failed: {e}", done=True)
         return {}
 
-    return _call_claude_vision(raw_text, [], api_key, emit)
+    return _call_ai_vision(raw_text, [], ai, emit)
 
 
-def _call_claude_vision(raw_text: str, images_b64: list[str], api_key: str, emit) -> dict:
-    emit("ai", "Claude is reading the project…", 55)
+def _call_ai_vision(raw_text: str, images_b64: list[str], ai, emit) -> dict:
+    emit("ai", f"Sending to {ai.provider} ({ai.model})…", 55)
     try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
-
-        content = []
-
-        # Add images first (visual context)
-        for img_b64 in images_b64[:3]:
-            content.append({
-                "type": "image",
-                "source": {"type": "base64", "media_type": "image/png", "data": img_b64},
-            })
-
-        # Add text context
-        text_block = ANALYSIS_PROMPT
+        text_prompt = ANALYSIS_PROMPT
         if raw_text.strip():
-            text_block += f"\n\nEXTRACTED TEXT FROM DOCUMENT:\n{raw_text[:6000]}"
+            text_prompt += f"\n\nEXTRACTED TEXT FROM DOCUMENT:\n{raw_text[:6000]}"
         else:
-            text_block += "\n\nPlease analyze the floor plan images above."
+            text_prompt += "\n\nPlease analyze the floor plan images above."
 
-        content.append({"type": "text", "text": text_block})
-
-        emit("ai", "Waiting for Claude analysis…", 65)
-        msg = client.messages.create(
-            model="claude-sonnet-4-6",
+        emit("ai", "Waiting for AI analysis…", 65)
+        response = ai.complete_with_vision(
+            text_prompt=text_prompt,
+            images_b64=images_b64,
             max_tokens=2000,
-            messages=[{"role": "user", "content": content}],
-        )
-
-        response = msg.content[0].text.strip()
+        ).strip()
         if "```json" in response:
             response = response.split("```json")[1].split("```")[0].strip()
         elif "```" in response:
