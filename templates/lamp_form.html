@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}{% if lamp %}Edit Lamp{% else %}Add Lamp{% endif %} — LampAdvisor{% endblock %}
+{% block content %}
+<div class="p-8 max-w-3xl">
+  <div class="mb-6">
+    <h2 class="text-2xl font-bold text-gray-900">{% if lamp %}Edit Lamp{% else %}Add New Lamp{% endif %}</h2>
+  </div>
+
+  <form method="post" action="{% if lamp %}/lamps/{{ lamp.id }}/edit{% else %}/lamps/add{% endif %}" class="space-y-6">
+    <div class="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+      <h3 class="font-semibold text-gray-800">Basic Information</h3>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Brand *</label>
+          <input type="text" name="brand" required value="{{ lamp.brand if lamp else '' }}"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"/>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Model *</label>
+          <input type="text" name="model" required value="{{ lamp.model if lamp else '' }}"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"/>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Category</label>
+          <select name="category" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+            <option value="">Select…</option>
+            {% for cat in ['downlight','pendant','spot','panel','strip','wall','floor','track','mirror','outdoor'] %}
+            <option value="{{ cat }}" {% if lamp and lamp.category == cat %}selected{% endif %}>{{ cat | title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">SKU</label>
+          <input type="text" name="sku" value="{{ lamp.sku if lamp else '' }}"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"/>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+      <h3 class="font-semibold text-gray-800">Technical Specs</h3>
+      <div class="grid grid-cols-3 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Wattage (W)</label>
+          <input type="number" name="wattage" step="0.1" value="{{ lamp.wattage if lamp else '' }}"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"/>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Lumens (lm)</label>
+          <input type="number" name="lumens" value="{{ lamp.lumens if lamp else '' }}"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"/>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Color Temp (CCT)</label>
+          <input type="text" name="color_temp" placeholder="e.g. 3000K" value="{{ lamp.color_temp if lamp else '' }}"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"/>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">CRI</label>
+          <input type="number" name="cri" min="0" max="100" value="{{ lamp.cri if lamp else '' }}"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"/>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">IP Rating</label>
+          <input type="text" name="ip_rating" placeholder="e.g. IP44" value="{{ lamp.ip_rating if lamp else '' }}"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"/>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Voltage</label>
+          <input type="text" name="voltage" placeholder="e.g. 220V" value="{{ lamp.voltage if lamp else '' }}"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"/>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Beam Angle (°)</label>
+          <input type="number" name="beam_angle" step="0.1" value="{{ lamp.beam_angle if lamp else '' }}"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"/>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Dimensions</label>
+          <input type="text" name="dimensions" placeholder="e.g. Ø120mm" value="{{ lamp.dimensions if lamp else '' }}"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"/>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Color / Finish</label>
+          <input type="text" name="color_finish" placeholder="e.g. White Matte" value="{{ lamp.color_finish if lamp else '' }}"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"/>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <input type="checkbox" name="dimmable" id="dimmable" value="true" {% if lamp and lamp.dimmable %}checked{% endif %}
+          class="rounded border-gray-300 text-amber-500 focus:ring-amber-400"/>
+        <label for="dimmable" class="text-sm font-medium text-gray-700">Dimmable</label>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+      <h3 class="font-semibold text-gray-800">Classification & Pricing</h3>
+      <div class="grid grid-cols-3 gap-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Property Level</label>
+          <select name="property_level" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+            {% for lvl in ['basic','mid','premium','luxury'] %}
+            <option value="{{ lvl }}" {% if lamp and lamp.property_level == lvl %}selected{% elif not lamp and lvl == 'mid' %}selected{% endif %}>{{ lvl | title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Indoor / Outdoor</label>
+          <select name="indoor_outdoor" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400">
+            {% for opt in ['indoor','outdoor','both'] %}
+            <option value="{{ opt }}" {% if lamp and lamp.indoor_outdoor == opt %}selected{% elif not lamp and opt == 'indoor' %}selected{% endif %}>{{ opt | title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Price (USD)</label>
+          <input type="number" name="price_usd" step="0.01" value="{{ lamp.price_usd if lamp else '' }}"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"/>
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Space Types (comma-separated)</label>
+        <input type="text" name="space_type" placeholder="e.g. living,bedroom,lobby" value="{{ lamp.space_type if lamp else '' }}"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"/>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+        <textarea name="description" rows="2"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none">{{ lamp.description if lamp else '' }}</textarea>
+      </div>
+    </div>
+
+    <div class="flex gap-4">
+      <button type="submit" class="flex-1 bg-amber-500 hover:bg-amber-600 text-white font-semibold py-3 rounded-xl transition-colors">
+        {% if lamp %}Save Changes{% else %}Add Lamp{% endif %}
+      </button>
+      <a href="/lamps" class="px-6 py-3 border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-xl transition-colors text-center">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

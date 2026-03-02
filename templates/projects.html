@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Projects — LampAdvisor{% endblock %}
+{% block content %}
+<div class="p-8">
+  <div class="mb-6 flex items-center justify-between">
+    <div>
+      <h2 class="text-2xl font-bold text-gray-900">Projects</h2>
+      <p class="text-gray-500 mt-1">{{ projects|length }} project{% if projects|length != 1 %}s{% endif %}</p>
+    </div>
+    <a href="/projects/new" class="text-sm bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+      New Project
+    </a>
+  </div>
+
+  {% if projects %}
+  <div class="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide border-b border-gray-200">
+          <tr>
+            <th class="text-left px-6 py-3">Project</th>
+            <th class="text-left px-4 py-3">Client</th>
+            <th class="text-left px-4 py-3">Type</th>
+            <th class="text-left px-4 py-3">Level</th>
+            <th class="text-left px-4 py-3">Area</th>
+            <th class="text-left px-4 py-3">Status</th>
+            <th class="text-left px-4 py-3">Date</th>
+            <th class="px-4 py-3"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for project in projects %}
+          <tr class="hover:bg-gray-50">
+            <td class="px-6 py-3 font-medium text-gray-900">{{ project.name }}</td>
+            <td class="px-4 py-3 text-gray-500">{{ project.client_name or '—' }}</td>
+            <td class="px-4 py-3 text-gray-600 capitalize">{{ project.property_type or '—' }}</td>
+            <td class="px-4 py-3">
+              <span class="text-xs px-2 py-0.5 rounded-full
+                {% if project.property_level == 'luxury' %}bg-purple-100 text-purple-700
+                {% elif project.property_level == 'premium' %}bg-blue-100 text-blue-700
+                {% elif project.property_level == 'mid' %}bg-green-100 text-green-700
+                {% else %}bg-gray-100 text-gray-600{% endif %}">
+                {{ project.property_level | title }}
+              </span>
+            </td>
+            <td class="px-4 py-3 text-gray-500">{% if project.total_sqm %}{{ project.total_sqm }}m²{% else %}—{% endif %}</td>
+            <td class="px-4 py-3">
+              <span class="text-xs px-2 py-0.5 rounded-full {% if project.status == 'proposed' %}bg-green-100 text-green-700{% else %}bg-gray-100 text-gray-600{% endif %}">
+                {{ project.status }}
+              </span>
+            </td>
+            <td class="px-4 py-3 text-gray-400 text-xs">{{ project.created_at.strftime('%d %b %Y') }}</td>
+            <td class="px-4 py-3 text-right">
+              <a href="/projects/{{ project.id }}" class="text-sm text-amber-600 hover:underline">View</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="bg-white rounded-xl border border-gray-200 p-12 text-center">
+    <p class="text-gray-400 text-lg mb-4">No projects yet</p>
+    <a href="/projects/new" class="inline-block bg-amber-500 hover:bg-amber-600 text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors">Create first project</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{% block title %}LampAdvisor{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: { 50:'#fffbeb', 100:'#fef3c7', 500:'#f59e0b', 600:'#d97706', 700:'#b45309', 900:'#78350f' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    [x-cloak] { display: none; }
+    .sidebar-link { @apply flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors; }
+    .sidebar-link:hover { @apply bg-amber-50 text-amber-700; }
+    .sidebar-link.active { @apply bg-amber-100 text-amber-800; }
+  </style>
+</head>
+<body class="bg-gray-50 text-gray-800 min-h-screen flex">
+
+  <!-- Sidebar -->
+  <aside class="w-64 bg-white border-r border-gray-200 flex flex-col shrink-0 min-h-screen">
+    <div class="px-6 py-5 border-b border-gray-200">
+      <div class="flex items-center gap-2">
+        <span class="text-2xl">💡</span>
+        <div>
+          <h1 class="font-bold text-gray-900 text-lg leading-tight">LampAdvisor</h1>
+          <p class="text-xs text-gray-500">Lighting Proposal System</p>
+        </div>
+      </div>
+    </div>
+    <nav class="flex-1 px-3 py-4 space-y-1">
+      <a href="/" class="sidebar-link {% if request.url.path == '/' %}active{% endif %}">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+        Dashboard
+      </a>
+      <a href="/projects/new" class="sidebar-link {% if '/projects/new' in request.url.path %}active{% endif %}">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+        New Project
+      </a>
+      <a href="/projects" class="sidebar-link {% if request.url.path == '/projects' %}active{% endif %}">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+        Projects
+      </a>
+      <hr class="my-2 border-gray-100"/>
+      <a href="/lamps" class="sidebar-link {% if request.url.path == '/lamps' %}active{% endif %}">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+        Lamp Database
+      </a>
+      <a href="/lamps/import" class="sidebar-link {% if '/lamps/import' in request.url.path %}active{% endif %}">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+        Import Catalog
+      </a>
+      <a href="/lamps/add" class="sidebar-link {% if '/lamps/add' in request.url.path %}active{% endif %}">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+        Add Lamp
+      </a>
+    </nav>
+    <div class="px-4 py-4 border-t border-gray-200 text-xs text-gray-400">
+      <p>LampAdvisor v1.0</p>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <main class="flex-1 overflow-auto">
+    {% block content %}{% endblock %}
+  </main>
+
+</body>
+</html>

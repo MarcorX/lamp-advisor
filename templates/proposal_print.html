@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Proposal {{ proposal.proposal_number }} — {{ project.name }}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @media print {
+      .no-print { display: none !important; }
+      body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body class="bg-white p-10 max-w-4xl mx-auto">
+
+  <div class="no-print mb-6 flex gap-3">
+    <button onclick="window.print()" class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-medium">
+      Print / Save as PDF
+    </button>
+    <button onclick="window.close()" class="border border-gray-200 hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg text-sm">
+      Close
+    </button>
+  </div>
+
+  <!-- Header -->
+  <div class="flex items-start justify-between mb-8 pb-6 border-b-2 border-amber-400">
+    <div>
+      <div class="flex items-center gap-2 mb-2">
+        <span class="text-2xl">💡</span>
+        <h1 class="text-xl font-bold text-gray-900">LampAdvisor</h1>
+      </div>
+      <p class="text-gray-500 text-sm">Lighting Proposal System</p>
+    </div>
+    <div class="text-right">
+      <p class="text-sm text-gray-500">Proposal</p>
+      <p class="text-3xl font-bold text-amber-500">#{{ proposal.proposal_number }}</p>
+    </div>
+  </div>
+
+  <!-- Project Info -->
+  <div class="grid grid-cols-2 gap-6 mb-8">
+    <div>
+      <h2 class="text-xl font-bold text-gray-900 mb-1">{{ project.name }}</h2>
+      <p class="text-gray-500">{{ project.client_name or '' }}</p>
+    </div>
+    <div class="text-right">
+      <p class="text-2xl font-bold text-gray-900">${{ "%.0f"|format(proposal.total_price_usd) }}</p>
+      <p class="text-sm text-gray-500">Estimated total</p>
+    </div>
+  </div>
+
+  <!-- Proposal Title & Tier -->
+  <div class="bg-amber-50 border border-amber-200 rounded-xl px-6 py-4 mb-6">
+    <div class="flex items-center gap-3 mb-1">
+      <span class="bg-amber-500 text-white text-xs font-bold px-2.5 py-1 rounded-full">Option {{ proposal.proposal_number }}</span>
+      <h3 class="font-bold text-lg text-gray-900">{{ proposal.title }}</h3>
+    </div>
+    <p class="text-sm text-gray-600 mt-1">
+      {{ project.property_type | title }} · {{ project.property_level | title }}
+      {% if project.total_sqm %} · {{ project.total_sqm }}m²{% endif %}
+    </p>
+  </div>
+
+  <!-- AI Justification -->
+  {% if proposal.ai_justification %}
+  <div class="bg-gray-50 rounded-xl px-6 py-4 mb-6 border border-gray-200">
+    <p class="text-sm text-gray-600 italic leading-relaxed">{{ proposal.ai_justification }}</p>
+  </div>
+  {% endif %}
+
+  <!-- Lamp Table -->
+  <table class="w-full text-sm mb-8">
+    <thead class="bg-gray-100 text-xs text-gray-500 uppercase">
+      <tr>
+        <th class="text-left px-4 py-3">Room</th>
+        <th class="text-left px-4 py-3">Brand / Model</th>
+        <th class="text-left px-4 py-3">Category</th>
+        <th class="text-left px-4 py-3">CCT</th>
+        <th class="text-left px-4 py-3">Lumens</th>
+        <th class="text-left px-4 py-3">CRI</th>
+        <th class="text-left px-4 py-3">Dim</th>
+        <th class="text-left px-4 py-3">IP</th>
+        <th class="text-right px-4 py-3">Qty</th>
+        <th class="text-right px-4 py-3">Unit $</th>
+        <th class="text-right px-4 py-3">Subtotal</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in lamps %}
+      <tr class="border-b border-gray-100">
+        <td class="px-4 py-3 capitalize font-medium text-gray-900">{{ r.room }}</td>
+        <td class="px-4 py-3">{{ r.lamp_brand }} <span class="text-gray-500">{{ r.lamp_model }}</span></td>
+        <td class="px-4 py-3 capitalize text-gray-500">{{ r.lamp_category or '—' }}</td>
+        <td class="px-4 py-3 text-orange-600 text-xs font-medium">{{ r.lamp_color_temp or '—' }}</td>
+        <td class="px-4 py-3 text-gray-600">{{ r.lamp_lumens or '—' }}{% if r.lamp_lumens %}lm{% endif %}</td>
+        <td class="px-4 py-3 text-gray-600">{{ r.lamp_cri or '—' }}</td>
+        <td class="px-4 py-3">{% if r.lamp_dimmable %}Yes{% else %}No{% endif %}</td>
+        <td class="px-4 py-3 text-gray-500">{{ r.lamp_ip or '—' }}</td>
+        <td class="px-4 py-3 text-right font-medium">{{ r.quantity }}</td>
+        <td class="px-4 py-3 text-right text-gray-600">{% if r.lamp_price %}${{ "%.0f"|format(r.lamp_price) }}{% else %}—{% endif %}</td>
+        <td class="px-4 py-3 text-right font-semibold">{% if r.lamp_price %}${{ "%.0f"|format(r.subtotal) }}{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr class="bg-amber-50 font-bold text-base">
+        <td colspan="10" class="px-4 py-3 text-right text-gray-800">TOTAL</td>
+        <td class="px-4 py-3 text-right text-amber-700">${{ "%.0f"|format(proposal.total_price_usd) }}</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <!-- Footer -->
+  <div class="border-t border-gray-200 pt-6 text-xs text-gray-400 flex justify-between">
+    <p>Generated by LampAdvisor · {{ proposal.created_at.strftime('%d %B %Y') }}</p>
+    <p>Prices are estimates and subject to availability</p>
+  </div>
+
+</body>
+</html>
