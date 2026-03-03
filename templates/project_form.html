@@ -43,24 +43,36 @@
       <p class="text-sm text-slate-500 mb-4 ml-8">Claude Vision will read your floor plan and auto-extract rooms, sqm, and lighting requirements.</p>
 
       <label class="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 rounded-xl p-8 cursor-pointer hover:border-amber-400 hover:bg-amber-50 transition-all"
-             :class="fileName ? 'border-amber-400 bg-amber-50' : ''">
-        <div class="w-12 h-12 rounded-xl mb-3 flex items-center justify-center" :class="fileName ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-400'">
+             :class="fileNames.length ? 'border-amber-400 bg-amber-50' : ''">
+        <div class="w-12 h-12 rounded-xl mb-3 flex items-center justify-center" :class="fileNames.length ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-400'">
           <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
         </div>
-        <p class="text-sm font-medium text-slate-700" x-text="fileName || 'Click to upload or drag & drop'"></p>
-        <p class="text-xs text-slate-400 mt-1">PDF floor plan, DWG, or DXF — max 50MB</p>
-        <input type="file" id="projectFile" name="file" accept=".pdf,.dwg,.dxf" class="hidden"
-               @change="fileName = $event.target.files[0]?.name || ''; analysisDone = false; analysisError = ''"/>
+        <template x-if="fileNames.length === 0">
+          <div class="text-center">
+            <p class="text-sm font-medium text-slate-700">Click to upload or drag & drop</p>
+            <p class="text-xs text-slate-400 mt-1">PDF floor plan, DWG, or DXF — select multiple files if project is split</p>
+          </div>
+        </template>
+        <template x-if="fileNames.length > 0">
+          <div class="text-center">
+            <template x-for="(name, i) in fileNames" :key="i">
+              <p class="text-sm font-medium text-amber-700" x-text="(fileNames.length > 1 ? (i+1)+'. ' : '') + name"></p>
+            </template>
+            <p x-show="fileNames.length > 1" class="text-xs text-amber-500 mt-1" x-text="`${fileNames.length} files selected`"></p>
+          </div>
+        </template>
+        <input type="file" id="projectFile" name="file" accept=".pdf,.dwg,.dxf" multiple class="hidden"
+               @change="onFilesSelected($event)"/>
       </label>
 
       <!-- Analyze button -->
-      <div x-show="fileName && !analyzing && !analysisDone" class="mt-4" x-cloak>
+      <div x-show="fileNames.length && !analyzing && !analysisDone" class="mt-4" x-cloak>
         <button type="button" @click="analyzeFile()"
           class="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-xl transition-colors text-sm">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
           </svg>
-          Analyze File with AI
+          <span x-text="fileNames.length > 1 ? `Analyze ${fileNames.length} Files with AI` : 'Analyze File with AI'"></span>
         </button>
       </div>
 
@@ -71,6 +83,48 @@
           Fields auto-filled from file
         </span>
         <button type="button" @click="analyzeFile()" class="text-xs text-blue-500 underline hover:text-blue-700">Re-analyze</button>
+      </div>
+    </div>
+
+    <!-- AI Chat Refinement Panel -->
+    <div x-show="analysisDone" x-cloak
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0 -translate-y-1"
+         x-transition:enter-end="opacity-100 translate-y-0"
+         class="card p-5 border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50">
+      <div class="flex items-center gap-2 mb-1">
+        <span class="w-6 h-6 bg-blue-600 text-white rounded-lg flex items-center justify-center text-xs font-bold shrink-0">AI</span>
+        <h4 class="text-sm font-semibold text-slate-800">Correct the analysis</h4>
+      </div>
+      <p class="text-xs text-slate-500 mb-3 ml-8">Tell the AI what's wrong and it will update the form fields.</p>
+
+      <!-- Chat history -->
+      <div x-show="chatHistory.length > 0" class="space-y-2 mb-3 max-h-48 overflow-y-auto" id="chatHistory">
+        <template x-for="(msg, i) in chatHistory" :key="i">
+          <div class="text-xs rounded-xl px-3 py-2 leading-relaxed"
+               :class="msg.role === 'user'
+                 ? 'bg-blue-600 text-white ml-10'
+                 : 'bg-white text-slate-700 border border-slate-200 mr-10'"
+               x-text="msg.text"></div>
+        </template>
+        <div x-show="chatLoading" class="bg-white border border-slate-200 rounded-xl px-3 py-2 mr-10">
+          <span class="text-xs text-slate-400 animate-pulse">Claude is thinking…</span>
+        </div>
+      </div>
+
+      <!-- Input row -->
+      <div class="flex gap-2">
+        <input type="text" x-model="chatMessage"
+               @keydown.enter.prevent="sendRefinement()"
+               :disabled="chatLoading"
+               placeholder="e.g. Only 7 rooms, not 15. Rooms are: living, kitchen, 3 bedrooms, 2 bathrooms"
+               class="flex-1 border border-blue-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400 bg-white disabled:opacity-50"/>
+        <button type="button" @click="sendRefinement()"
+                :disabled="!chatMessage.trim() || chatLoading"
+                class="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-4 py-2 disabled:opacity-40 transition-colors flex items-center">
+          <svg x-show="!chatLoading" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+          <svg x-show="chatLoading" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        </button>
       </div>
     </div>
 
@@ -212,7 +266,7 @@
 <script>
 function projectForm() {
   return {
-    fileName: '',
+    fileNames: [],        // array of selected file names
     submitting: false,
     errorMsg: '',
     analyzing: false,
@@ -221,16 +275,29 @@ function projectForm() {
     analysisLog: [],
     analysisPct: 0,
     analysisSteps: [
-      { label: 'Uploading file', state: 'pending' },
+      { label: 'Uploading file(s)', state: 'pending' },
       { label: 'Extracting document content', state: 'pending' },
       { label: 'Claude AI reading floor plan', state: 'pending' },
       { label: 'Analysis complete', state: 'pending' },
     ],
     analysisStepMap: { start: 0, extract: 1, extracting: 1, images: 2, ai: 2, fallback: 2, done: 3 },
+    lastExtracted: null,  // stores full analysis JSON for the refine call
+    chatMessage: '',
+    chatLoading: false,
+    chatHistory: [],
+
+    onFilesSelected(event) {
+      const files = Array.from(event.target.files);
+      this.fileNames = files.map(f => f.name);
+      this.analysisDone = false;
+      this.analysisError = '';
+      this.chatHistory = [];
+      this.lastExtracted = null;
+    },
 
     async analyzeFile() {
       const fileInput = document.getElementById('projectFile');
-      if (!fileInput.files[0]) return;
+      if (!fileInput.files.length) return;
       this.analyzing = true;
       this.analysisDone = false;
       this.analysisError = '';
@@ -239,7 +306,9 @@ function projectForm() {
       this.analysisSteps.forEach(s => s.state = 'pending');
 
       const formData = new FormData();
-      formData.append('file', fileInput.files[0]);
+      for (const file of fileInput.files) {
+        formData.append('files', file);
+      }
       try {
         const res = await fetch('/api/projects/analyze-preview', { method: 'POST', body: formData });
         if (!res.ok) { const err = await res.json(); throw new Error(err.detail || 'Analysis failed'); }
@@ -289,6 +358,7 @@ function projectForm() {
     },
 
     fillFormFields(extracted) {
+      this.lastExtracted = extracted;
       const set = (name, val) => {
         if (val == null || val === '') return;
         const el = document.querySelector(`[name="${name}"]`);
@@ -302,6 +372,39 @@ function projectForm() {
       set('special_requirements', extracted.special_requirements);
       if (extracted.rooms && extracted.rooms.length > 0) {
         set('rooms_detail', extracted.rooms.map(r => r.name).join(', '));
+      }
+    },
+
+    async sendRefinement() {
+      if (!this.chatMessage.trim() || this.chatLoading) return;
+      const msg = this.chatMessage.trim();
+      this.chatHistory.push({ role: 'user', text: msg });
+      this.chatMessage = '';
+      this.chatLoading = true;
+      this.$nextTick(() => {
+        const el = document.getElementById('chatHistory');
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+      try {
+        const res = await fetch('/api/projects/refine-analysis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ current_data: this.lastExtracted, message: msg }),
+        });
+        if (!res.ok) { const err = await res.json(); throw new Error(err.detail || 'Refinement failed'); }
+        const { data } = await res.json();
+        this.fillFormFields(data);
+        const roomNames = data.rooms?.map(r => r.name).join(', ') || '—';
+        const sqm = data.total_sqm ? ` · ${data.total_sqm} m²` : '';
+        this.chatHistory.push({ role: 'assistant', text: `Updated! ${data.rooms?.length || 0} rooms${sqm}: ${roomNames}` });
+      } catch(e) {
+        this.chatHistory.push({ role: 'assistant', text: `Error: ${e.message}` });
+      } finally {
+        this.chatLoading = false;
+        this.$nextTick(() => {
+          const el = document.getElementById('chatHistory');
+          if (el) el.scrollTop = el.scrollHeight;
+        });
       }
     },
 

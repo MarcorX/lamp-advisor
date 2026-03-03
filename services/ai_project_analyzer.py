@@ -114,6 +114,66 @@ def run_analysis(file_path: str, session_id: str, loop: asyncio.AbstractEventLoo
         return {}
 
 
+def run_analysis_multi(file_paths: list, session_id: str, loop: asyncio.AbstractEventLoop) -> dict:
+    """Analyze multiple files (PDFs) as one project — combines text and images before sending to Claude."""
+
+    def emit(step: str, msg: str, progress: int = 0, done: bool = False, **kwargs):
+        push_sync(session_id, loop, {"step": step, "msg": msg, "progress": progress, "done": done, **kwargs})
+
+    emit("start", f"Starting analysis of {len(file_paths)} file(s)…", 5)
+
+    try:
+        from services.ai_client import get_client
+        ai = get_client()
+
+        all_raw_text = ""
+        all_images_b64 = []
+
+        for i, file_path in enumerate(file_paths):
+            ext = Path(file_path).suffix.lower()
+            name = Path(file_path).name
+            base_pct = 10 + i * (35 // len(file_paths))
+            emit("extract", f"Extracting file {i + 1}/{len(file_paths)}: {name}…", base_pct)
+
+            if ext == ".pdf":
+                try:
+                    import pdfplumber
+                    with pdfplumber.open(file_path) as pdf:
+                        text = ""
+                        for page in pdf.pages[:8]:
+                            t = page.extract_text()
+                            if t:
+                                text += t + "\n"
+                    if text.strip():
+                        all_raw_text += f"\n=== DOCUMENT {i + 1}: {name} ===\n{text}"
+                except Exception:
+                    pass
+
+                # Up to 2 images per file, 4 total cap
+                slots = min(2, 4 - len(all_images_b64))
+                if slots > 0:
+                    try:
+                        import fitz
+                        doc = fitz.open(file_path)
+                        for page_num in range(min(slots, len(doc))):
+                            pix = doc[page_num].get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
+                            all_images_b64.append(base64.standard_b64encode(pix.tobytes("png")).decode())
+                        doc.close()
+                    except Exception:
+                        pass
+
+            elif ext in (".dwg", ".dxf"):
+                # For CAD files just run the single-file analyzer (CAD combine is complex)
+                return _analyze_cad_with_ai(file_path, ai, emit)
+
+        emit("images", f"Combined {len(all_images_b64)} page image(s) from {len(file_paths)} file(s)", 50)
+        return _call_ai_vision(all_raw_text, all_images_b64, ai, emit)
+
+    except Exception as e:
+        emit("error", f"Analysis failed: {str(e)}", done=True)
+        return {}
+
+
 def _analyze_pdf_with_ai(file_path: str, ai, emit) -> dict:
     import pdfplumber
 

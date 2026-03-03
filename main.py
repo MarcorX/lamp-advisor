@@ -7,7 +7,7 @@ import os
 import shutil
 import threading
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import FastAPI, Request, Depends, File, UploadFile, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, StreamingResponse
@@ -387,30 +387,88 @@ def new_project_form(request: Request):
 
 
 @app.post("/api/projects/analyze-preview")
-async def api_analyze_preview(file: UploadFile = File(...)):
-    """Stateless file pre-analysis — streams extracted data via SSE, no DB write."""
-    if not file or not file.filename:
-        raise HTTPException(400, "No file provided")
-    ext = Path(file.filename).suffix.lower()
-    if ext not in (".pdf", ".dwg", ".dxf"):
-        raise HTTPException(400, "Only PDF, DWG, or DXF files are supported")
-    save_path = UPLOAD_DIR / f"preview_{file.filename}"
-    with open(save_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+async def api_analyze_preview(files: List[UploadFile] = File(...)):
+    """Stateless file pre-analysis — accepts 1+ files, streams extracted data via SSE, no DB write."""
+    if not files:
+        raise HTTPException(400, "No files provided")
+    saved_paths: list[str] = []
+    for file in files:
+        if not file or not file.filename:
+            continue
+        ext = Path(file.filename).suffix.lower()
+        if ext not in (".pdf", ".dwg", ".dxf"):
+            raise HTTPException(400, f"Unsupported file type: {file.filename}")
+        save_path = UPLOAD_DIR / f"preview_{file.filename}"
+        with open(save_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+        saved_paths.append(str(save_path))
+    if not saved_paths:
+        raise HTTPException(400, "No valid files provided")
     sid = progress.create_session()
     loop = asyncio.get_event_loop()
     threading.Thread(
         target=_run_preview_analysis,
-        args=(str(save_path), sid, loop),
+        args=(saved_paths, sid, loop),
         daemon=True,
     ).start()
     return JSONResponse({"session_id": sid})
 
 
-def _run_preview_analysis(file_path: str, session_id: str, loop: asyncio.AbstractEventLoop):
-    from services.ai_project_analyzer import run_analysis
-    run_analysis(file_path, session_id, loop)
-    Path(file_path).unlink(missing_ok=True)
+def _run_preview_analysis(file_paths: list, session_id: str, loop: asyncio.AbstractEventLoop):
+    from services.ai_project_analyzer import run_analysis, run_analysis_multi
+    if len(file_paths) == 1:
+        run_analysis(file_paths[0], session_id, loop)
+    else:
+        run_analysis_multi(file_paths, session_id, loop)
+    for p in file_paths:
+        Path(p).unlink(missing_ok=True)
+
+
+@app.post("/api/projects/refine-analysis")
+async def api_refine_analysis(request: Request):
+    """Chat-style correction of an AI project analysis. Body: {current_data, message}."""
+    body = await request.json()
+    current_data = body.get("current_data") or {}
+    message = (body.get("message") or "").strip()
+    if not message:
+        raise HTTPException(400, "message is required")
+
+    from services.ai_client import get_client
+    ai = get_client()
+    if not ai.is_configured():
+        raise HTTPException(503, "AI not configured — add an API key in Settings")
+
+    prompt = (
+        "You are a lighting design assistant reviewing an AI analysis of a floor plan.\n"
+        "The current extracted data is:\n"
+        f"{json.dumps(current_data, ensure_ascii=False, indent=2)}\n\n"
+        f'The user says: "{message}"\n\n'
+        "Update the JSON to reflect the user's correction and return ONLY the corrected JSON object "
+        "— no explanation, no markdown fences.\n"
+        "Rules:\n"
+        "- Update rooms array if the user corrects room count/names\n"
+        "- Update total_sqm if the user corrects the area\n"
+        "- Preserve per-room specs (fixture_types, cri_min, etc.) when rooms are kept\n"
+        "- For new rooms added, supply sensible lighting defaults\n"
+        "- Preserve all other fields the user has not mentioned"
+    )
+    try:
+        response = ai.complete(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=4000,
+        ).strip()
+        if "```json" in response:
+            response = response.split("```json")[1].split("```")[0].strip()
+        elif "```" in response:
+            response = response.split("```")[1].split("```")[0].strip()
+        if not response.startswith("{"):
+            start, end = response.find("{"), response.rfind("}")
+            if start != -1:
+                response = response[start:end + 1]
+        data = json.loads(response)
+        return JSONResponse({"data": data})
+    except Exception as e:
+        raise HTTPException(500, f"Refinement failed: {str(e)}")
 
 
 @app.post("/api/projects/new")
