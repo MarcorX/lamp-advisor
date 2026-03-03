@@ -842,16 +842,20 @@ def _lamps():
     return rows
 
 
-def seed(db=None):
+def seed(db=None, force=False):
     close_db = db is None
     if db is None:
         init_db()
         db = SessionLocal()
     try:
         count = db.query(Lamp).count()
-        if count > 0:
+        if count > 0 and not force:
             print(f"Catalog already has {count} lamps — skipping seed.")
             return count
+        if force and count > 0:
+            db.query(Lamp).delete()
+            db.commit()
+            print(f"Cleared {count} existing lamps.")
         lamps = _lamps()
         for data in lamps:
             db.add(Lamp(**data))

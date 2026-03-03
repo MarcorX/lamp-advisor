@@ -322,6 +322,17 @@ def lamps_clear_all(request: Request, db: Session = Depends(get_db)):
     return RedirectResponse(f"/lamps?cleared={deleted}", status_code=303)
 
 
+@app.post("/lamps/reload-seed")
+def lamps_reload_seed(request: Request, db: Session = Depends(get_db)):
+    """Wipe catalog and reload the built-in 500-lamp seed (admin only)."""
+    user = request.state.current_user
+    if not user or not user.is_admin:
+        raise HTTPException(403, "Admin access required")
+    from seed_catalog import seed
+    count = seed(db=db, force=True)
+    return RedirectResponse(f"/lamps?seeded={count}", status_code=303)
+
+
 # ---------------------------------------------------------------------------
 # Lamp Import — AI-powered
 # ---------------------------------------------------------------------------
