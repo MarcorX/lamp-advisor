@@ -493,10 +493,13 @@ def _run_project_analysis(
         if analysis_data.get("style") and not project.style:
             project.style = analysis_data["style"]
 
-        # Build rooms from analysis
-        if analysis_data.get("rooms") and not project.rooms_detail:
-            room_names = [r["name"] for r in analysis_data["rooms"] if r.get("name")]
-            project.rooms_detail = ",".join(room_names)
+        # Build rooms from analysis — store full JSON for recommender
+        if analysis_data.get("rooms"):
+            rooms_full = analysis_data["rooms"]
+            # Always update rooms_detail with the richer JSON from AI
+            project.rooms_detail = json.dumps(rooms_full, ensure_ascii=False)
+        elif not project.rooms_detail:
+            project.rooms_detail = ""
 
         if analysis_data.get("special_requirements") and not project.special_requirements:
             project.special_requirements = analysis_data.get("special_requirements", "")
@@ -507,17 +510,28 @@ def _run_project_analysis(
 
         # Step 2 — recommendations
         emit("matching", "Matching catalog to project requirements…", 85)
-        rooms = [r.strip() for r in (project.rooms_detail or "").replace(";", ",").split(",") if r.strip()]
+
+        # Try to use full room dicts from AI; fall back to plain name strings
+        rooms_raw = project.rooms_detail or ""
+        rooms: list = []
+        if rooms_raw.strip().startswith("["):
+            try:
+                rooms = json.loads(rooms_raw)
+            except Exception:
+                pass
+        if not rooms:
+            # Legacy: comma-separated room names
+            rooms = [r.strip() for r in rooms_raw.replace(";", ",").split(",") if r.strip()]
         if not rooms:
             rooms = ["living", "bedroom", "kitchen", "bathroom"]
 
         project_dict = {
-            "property_type":  project.property_type,
-            "property_level": project.property_level,
-            "total_sqm":      project.total_sqm or 80,
-            "rooms":          rooms,
-            "style":          project.style,
-            "budget_usd":     project.budget_usd,
+            "property_type":        project.property_type,
+            "property_level":       project.property_level,
+            "total_sqm":            project.total_sqm or 80,
+            "rooms":                rooms,
+            "style":                project.style,
+            "budget_usd":           project.budget_usd,
             "special_requirements": project.special_requirements,
         }
 

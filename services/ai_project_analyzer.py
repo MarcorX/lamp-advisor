@@ -1,19 +1,21 @@
 """
 Deep project analyzer using Claude Vision + text extraction.
-Pulls: sqm, rooms + sizes, lamp counts, property type/level, style, special notes.
+Pulls: sqm, rooms + sizes + per-room lighting specs, property type/level, style.
 """
 import os
+import re
 import json
 import asyncio
 import base64
 from pathlib import Path
+from collections import defaultdict
 
 from services.progress import push_sync
 from services.file_parser import parse_file  # fallback
 
 
-ANALYSIS_PROMPT = """You are an expert architect and lighting designer.
-Analyze the provided floor plan / project document and extract the following information.
+ANALYSIS_PROMPT = """You are an expert lighting designer and architect.
+Analyze the provided floor plan / project document and return a detailed room-by-room lighting specification.
 Return ONLY a valid JSON object — no explanation, no markdown fences.
 
 Required JSON structure:
@@ -27,23 +29,41 @@ Required JSON structure:
     {
       "name": "room name in English",
       "sqm": number or null,
+      "ceiling_height_m": number or null,
       "fixtures_recommended": integer,
-      "notes": "any special requirements"
+      "fixture_types": ["downlight","pendant","spot","panel","strip","wall","floor","track","mirror"],
+      "color_temp": "2700K|3000K|4000K|tunable",
+      "cri_min": 80 or 90 or 95,
+      "ip_required": "IP20|IP44|IP65",
+      "dimmable": true or false,
+      "notes": "special lighting notes for this room"
     }
   ],
-  "special_requirements": "free text — outdoor areas, high ceilings, wet zones, etc.",
-  "extracted_notes": "any other useful project info from the document"
+  "special_requirements": "free text — outdoor, high ceilings, wet zones, etc.",
+  "extracted_notes": "any other useful project information"
 }
 
-Lighting fixture estimation rules:
-- Residential general: 1 fixture per 4–6 m² (downlights) or 1 pendant per room
-- Living/dining: 1 pendant + 2–4 downlights or spots per 20m²
-- Bedroom: 1 ceiling + 2 wall/bedside per room
-- Kitchen: 1 per 4m² (panels/downlights) + under-cabinet strip
-- Bathroom: 1–2 per bathroom
-- Office: 1 panel per 6m²
-- Lobby/hotel: statement pendants + accent downlights
-- Retail: 1 track head per 3–4m²
+Per-space lighting rules:
+- Living room: 2700-3000K, CRI 90+, dimmable, pendants + downlights + floor lamps, ~1 per 4m²
+- Dining: 2700-3000K, CRI 90+, dimmable pendant over table + 2-4 accent downlights
+- Bedroom: 2700K, CRI 90+, dimmable, ceiling + 2 wall/bedside lights
+- Master bedroom: 2700K, CRI 95+, dimmable, ceiling + wall + strip in wardrobes
+- Kitchen: 3000-4000K, CRI 90+, IP44 over sink, downlights + under-cabinet strip, 1 per 4m²
+- Bathroom: 3000-4000K, CRI 90+, IP44 min, mirror light + ceiling downlight
+- Corridor/Hall: 3000K, IP20, downlights, 1 per 4m²
+- Office/Study: 3000-4000K, CRI 80+, no-glare panels or downlights, 1 per 6m²
+- Lobby/Entrance: 2700-3000K, CRI 90+, statement pendant + accent downlights
+- Terrace/Outdoor: IP65, 2700-3000K, wall lights + spike/step lights
+- Garage/Utility: 4000K, IP44, panels, 1 per 8m²
+- Hotel room: 2700K, CRI 90+, full dimming, layered ambient + accent + task
+- Restaurant: 2700K, CRI 90+, dimmable pendants over tables + ambient downlights
+- Retail: 3000-4000K, CRI 90+, track heads, 1 per 3-4m²
+
+Property level modifiers:
+- basic: functional, IP20 where acceptable, dimming not required, CRI 80+
+- mid: quality fixtures, selective dimming, CRI 80+
+- premium: CRI 90+, full dimming, layered lighting in key spaces
+- luxury: CRI 95+, tunable white, feature pendants/chandeliers, bespoke
 """
 
 
@@ -68,11 +88,14 @@ def run_analysis(file_path: str, session_id: str, loop: asyncio.AbstractEventLoo
         else:
             emit("fallback", "No API key — using text extraction…", 20)
 
-        # Fallback: use existing regex parser
+        # Fallback: regex parser
         result = parse_file(file_path)
         extracted = result.get("extracted", {})
         rooms_raw = extracted.get("rooms", [])
-        rooms = [{"name": r, "sqm": None, "fixtures_recommended": 2, "notes": ""} for r in rooms_raw]
+        rooms = [{"name": r, "sqm": None, "fixtures_recommended": 2,
+                  "fixture_types": ["downlight"], "color_temp": "3000K",
+                  "cri_min": 80, "ip_required": "IP20", "dimmable": False, "notes": ""}
+                 for r in rooms_raw]
         extracted_dict = {
             "total_sqm": extracted.get("total_sqm"),
             "num_floors": extracted.get("num_floors"),
@@ -105,7 +128,6 @@ def _analyze_pdf_with_ai(file_path: str, ai, emit) -> dict:
     except Exception:
         pass
 
-    # Try to extract images via PyMuPDF
     images_b64 = []
     emit("images", "Converting PDF pages to images for visual analysis…", 30)
     try:
@@ -113,7 +135,7 @@ def _analyze_pdf_with_ai(file_path: str, ai, emit) -> dict:
         doc = fitz.open(file_path)
         for page_num in range(min(4, len(doc))):
             page = doc[page_num]
-            mat = fitz.Matrix(1.2, 1.2)
+            mat = fitz.Matrix(1.5, 1.5)
             pix = page.get_pixmap(matrix=mat)
             img_bytes = pix.tobytes("png")
             images_b64.append(base64.standard_b64encode(img_bytes).decode())
@@ -131,80 +153,170 @@ def _analyze_cad_with_ai(file_path: str, ai, emit) -> dict:
         import ezdxf
         try:
             doc = ezdxf.readfile(file_path)
-        except Exception as dwg_err:
-            # ezdxf only supports DXF — binary DWG files fail here.
-            # Fall back: try to extract any readable ASCII text from the binary.
-            emit("extract", "Binary DWG format — attempting text extraction (convert to DXF/PDF for best results)…", 20)
+        except Exception:
+            # Binary DWG — try to extract readable text from binary
+            emit("extract", "Binary DWG detected — extracting text (export as DXF or PDF for best results)…", 20)
             raw_bytes = Path(file_path).read_bytes()
-            # Pull printable ASCII runs of 4+ chars from the binary
-            import re
             texts_raw = re.findall(rb'[ -~]{4,}', raw_bytes)
-            raw_text = "\n".join(t.decode("ascii", errors="ignore") for t in texts_raw[:300])
+            raw_text = "\n".join(t.decode("ascii", errors="ignore") for t in texts_raw[:500])
             if not raw_text.strip():
-                emit("error", "Could not read DWG file. Please export it as DXF or PDF from AutoCAD and re-upload.", done=True)
+                emit("error", "Cannot read DWG. Please export as DXF or PDF from AutoCAD and re-upload.", done=True)
                 return {}
             emit("extract", f"Extracted {len(raw_text)} characters of text from binary DWG", 40)
             return _call_ai_vision(raw_text, [], ai, emit)
+
         msp = doc.modelspace()
 
-        texts = []
-        layer_names = set()
-        areas = []
+        # Collect entities organized by layer
+        layers: dict = defaultdict(lambda: {"texts": [], "areas": [], "counts": defaultdict(int)})
+        all_texts = []
+        all_areas = []
 
         for entity in msp:
-            layer_names.add(entity.dxf.layer)
-            if entity.dxftype() in ("TEXT", "MTEXT"):
+            layer = entity.dxf.layer
+            etype = entity.dxftype()
+            layers[layer]["counts"][etype] += 1
+
+            if etype in ("TEXT", "MTEXT"):
                 try:
-                    t = entity.plain_mtext() if entity.dxftype() == "MTEXT" else entity.dxf.text
-                    if t and t.strip():
-                        texts.append(t.strip())
+                    text = entity.plain_mtext() if etype == "MTEXT" else entity.dxf.text
+                    if text and text.strip():
+                        pos = None
+                        try:
+                            ins = entity.dxf.insert
+                            pos = (round(ins.x, 0), round(ins.y, 0))
+                        except Exception:
+                            pass
+                        all_texts.append({"text": text.strip(), "layer": layer, "pos": pos})
+                        layers[layer]["texts"].append(text.strip())
                 except Exception:
                     pass
-            if entity.dxftype() == "LWPOLYLINE" and entity.is_closed:
+
+            elif etype == "LWPOLYLINE" and entity.is_closed:
                 try:
                     from ezdxf.math import area as calc_area
                     pts = list(entity.get_points())
                     if len(pts) >= 3:
                         xy = [(p[0], p[1]) for p in pts]
-                        a = abs(calc_area(xy))
-                        if a > 1:
-                            areas.append(round(a / 1_000_000, 2))
+                        raw_area = abs(calc_area(xy))
+                        sqm = _to_sqm(raw_area)
+                        if sqm and 0.5 < sqm < 5000:
+                            all_areas.append({"area_m2": sqm, "layer": layer})
+                            layers[layer]["areas"].append(sqm)
                 except Exception:
                     pass
 
-        raw_text = f"Layer names: {', '.join(list(layer_names)[:50])}\n\nText entities:\n" + "\n".join(texts[:200])
-        if areas:
-            raw_text += f"\n\nCalculated areas (m²): {areas[:20]}"
+        emit("extract", f"Parsed {len(all_texts)} text entities, {len(all_areas)} closed areas from {len(layers)} layers", 35)
 
-        emit("extract", f"Extracted {len(texts)} text entities from {len(layer_names)} layers", 40)
+        # Build rich text description for Claude
+        raw_text = _build_cad_summary(layers, all_texts, all_areas)
+
+        # Try rendering DXF to image using ezdxf drawing module
+        images_b64 = []
+        emit("images", "Rendering DXF floor plan to image…", 45)
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+            from ezdxf.addons.drawing import RenderContext, Frontend
+            from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
+            import io
+
+            fig = plt.figure(figsize=(18, 14), dpi=100)
+            ax = fig.add_axes([0, 0, 1, 1])
+            ctx = RenderContext(doc)
+            out = MatplotlibBackend(ax)
+            Frontend(ctx, out).draw_layout(msp, finalize=True)
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", dpi=100, bbox_inches="tight", facecolor="white")
+            plt.close(fig)
+            buf.seek(0)
+            images_b64.append(base64.standard_b64encode(buf.read()).decode())
+            emit("images", "Floor plan rendered successfully", 52)
+        except ImportError:
+            emit("images", "Visual rendering unavailable (matplotlib not installed) — using text extraction only", 52)
+        except Exception as e:
+            emit("images", f"Visual rendering skipped ({str(e)[:60]}) — using text extraction only", 52)
+
+        return _call_ai_vision(raw_text, images_b64, ai, emit)
+
     except Exception as e:
         emit("error", f"CAD parsing failed: {e}", done=True)
         return {}
 
-    return _call_ai_vision(raw_text, [], ai, emit)
+
+def _to_sqm(raw_area: float) -> float | None:
+    """Convert raw DXF polyline area to m² with smart unit detection."""
+    if raw_area <= 0:
+        return None
+    if raw_area < 10_000:
+        return round(raw_area, 2)          # likely m² already
+    if raw_area < 500_000_000:
+        return round(raw_area / 10_000, 2) # likely cm²
+    return round(raw_area / 1_000_000, 2)  # likely mm²
 
 
-def _call_ai_vision(raw_text: str, images_b64: list[str], ai, emit) -> dict:
-    emit("ai", f"Sending to {ai.provider} ({ai.model})…", 55)
+def _build_cad_summary(layers: dict, all_texts: list, all_areas: list) -> str:
+    """Build a structured text description of the DXF for Claude."""
+    lines = ["=== DXF FLOOR PLAN DATA ===\n"]
+
+    # Layer overview (only layers with content)
+    active_layers = {k: v for k, v in layers.items() if v["texts"] or v["areas"]}
+    if active_layers:
+        lines.append(f"LAYERS ({len(active_layers)} with content):")
+        for name, data in sorted(active_layers.items()):
+            parts = []
+            if data["texts"]:
+                sample = ", ".join(f'"{t}"' for t in data["texts"][:4])
+                parts.append(f"texts: {sample}")
+            if data["areas"]:
+                areas_s = ", ".join(f"{a}m²" for a in sorted(data["areas"])[:5])
+                parts.append(f"areas: {areas_s}")
+            if parts:
+                lines.append(f"  {name}: {' | '.join(parts)}")
+        lines.append("")
+
+    # All text entities (spatial context helps Claude identify rooms)
+    if all_texts:
+        lines.append(f"ALL TEXT ENTITIES ({len(all_texts)} total):")
+        for t in all_texts[:150]:
+            pos_str = f" @ ({t['pos'][0]:.0f},{t['pos'][1]:.0f})" if t['pos'] else ""
+            lines.append(f"  [{t['layer']}] \"{t['text']}\"{pos_str}")
+        lines.append("")
+
+    # All detected areas
+    if all_areas:
+        sorted_areas = sorted(all_areas, key=lambda x: x["area_m2"], reverse=True)
+        lines.append(f"CLOSED AREAS — likely rooms/spaces ({len(all_areas)} total):")
+        for a in sorted_areas[:40]:
+            lines.append(f"  {a['area_m2']} m²  (layer: {a['layer']})")
+        lines.append(f"\n  Total area from polylines: {sum(a['area_m2'] for a in sorted_areas[:40]):.1f} m²")
+
+    return "\n".join(lines)
+
+
+def _call_ai_vision(raw_text: str, images_b64: list, ai, emit) -> dict:
+    emit("ai", f"Sending to {ai.provider} ({ai.model})…", 58)
     try:
         text_prompt = ANALYSIS_PROMPT
         if raw_text.strip():
-            text_prompt += f"\n\nEXTRACTED TEXT FROM DOCUMENT:\n{raw_text[:6000]}"
+            text_prompt += f"\n\nEXTRACTED DATA FROM DOCUMENT:\n{raw_text[:8000]}"
         else:
             text_prompt += "\n\nPlease analyze the floor plan images above."
 
-        emit("ai", "Waiting for AI analysis…", 65)
+        emit("ai", "Claude is reading the floor plan…", 68)
         response = ai.complete_with_vision(
             text_prompt=text_prompt,
             images_b64=images_b64,
-            max_tokens=2000,
+            max_tokens=4000,
         ).strip()
+
         if "```json" in response:
             response = response.split("```json")[1].split("```")[0].strip()
         elif "```" in response:
             response = response.split("```")[1].split("```")[0].strip()
 
-        emit("ai", "Parsing analysis results…", 80)
+        emit("ai", "Parsing analysis results…", 85)
         data = json.loads(response)
         emit("done", "✓ Project analysis complete", 100, done=True, data=data)
         return data
