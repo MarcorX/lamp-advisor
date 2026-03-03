@@ -82,8 +82,23 @@
           {% for lamp in lamps %}
           <tr class="hover:bg-slate-50 transition-colors">
             <td class="px-5 py-3.5">
-              <p class="font-medium text-slate-900">{{ lamp.brand }}</p>
-              <p class="text-xs text-slate-400">{{ lamp.model }}</p>
+              <div class="flex items-center gap-3">
+                {% if lamp.image_url %}
+                <a href="{{ lamp.datasheet_url or lamp.image_url }}" target="_blank" rel="noopener">
+                  <img src="{{ lamp.image_url }}" alt="{{ lamp.brand }} {{ lamp.model }}"
+                       class="w-10 h-10 object-contain rounded-lg border border-slate-100 bg-white flex-shrink-0"
+                       onerror="this.style.display='none'">
+                </a>
+                {% else %}
+                <div class="w-10 h-10 rounded-lg border border-slate-100 bg-slate-50 flex-shrink-0 flex items-center justify-center text-slate-300">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+                </div>
+                {% endif %}
+                <div>
+                  <p class="font-medium text-slate-900">{{ lamp.brand }}</p>
+                  <p class="text-xs text-slate-400">{{ lamp.model }}</p>
+                </div>
+              </div>
             </td>
             <td class="px-4 py-3.5">
               <span class="badge bg-slate-100 text-slate-600 capitalize">{{ lamp.category or '—' }}</span>

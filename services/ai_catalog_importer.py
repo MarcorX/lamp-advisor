@@ -4,10 +4,12 @@ Accepts any Excel / CSV / PDF product list and uses Claude to map it to the Lamp
 Falls back to column-name heuristics if no API key is present.
 """
 import os
+import re
 import json
 import asyncio
 import pandas as pd
 from pathlib import Path
+from urllib.parse import urljoin, urlparse
 from sqlalchemy.orm import Session
 
 from database import Lamp
@@ -34,7 +36,8 @@ TARGET_SCHEMA = """
   "space_type": "string — comma-separated room types, e.g. 'living,bedroom,lobby'",
   "price_usd": "number — unit price in USD",
   "sku": "string — product code / reference",
-  "description": "string — short product description"
+  "description": "string — short product description",
+  "url": "string — product page URL (if present in the data)"
 }
 """
 
@@ -111,12 +114,28 @@ def run_import(file_path: str, db: Session, session_id: str, loop: asyncio.Abstr
             return 0
 
         emit("saving", f"Saving {len(all_lamps)} lamps to database…", 80)
-        saved, save_failures = _save_lamps_tracked(all_lamps, db)
+        saved, save_failures, url_map = _save_lamps_tracked(all_lamps, db)
         failed_rows.extend(save_failures)
+
+        # Fetch product page images for lamps that have a URL
+        img_fetched = 0
+        if url_map:
+            emit("images", f"Fetching product images for {len(url_map)} lamp(s)…", 85)
+            for lamp_id, product_url in url_map:
+                img_url = _fetch_product_image(product_url)
+                if img_url:
+                    lamp = db.get(Lamp, lamp_id)
+                    if lamp:
+                        lamp.image_url = img_url
+                        img_fetched += 1
+            if img_fetched:
+                db.commit()
+            emit("images", f"Found images for {img_fetched}/{len(url_map)} lamp(s)", 95)
 
         n_failed = len(failed_rows)
         suffix = f", {n_failed} rows skipped" if n_failed else ""
-        emit("done", f"✓ {saved} lamps imported successfully{suffix}", 100,
+        img_suffix = f", {img_fetched} images fetched" if img_fetched else ""
+        emit("done", f"✓ {saved} lamps imported successfully{suffix}{img_suffix}", 100,
              done=True, count=saved, failed=n_failed, failed_samples=failed_rows[:5])
         return saved
 
@@ -182,6 +201,8 @@ def _heuristic_map(records: list[dict], emit) -> list[dict]:
         "nivel": "property_level", "gama": "property_level",
         "espacio": "space_type", "uso": "space_type",
         "interior_exterior": "indoor_outdoor",
+        "url": "url", "link": "url", "enlace": "url", "producto": "url",
+        "product_url": "url", "product_link": "url", "web": "url",
     }
     result = []
     for row in records:
@@ -196,9 +217,11 @@ def _heuristic_map(records: list[dict], emit) -> list[dict]:
 
 
 def _save_lamps_tracked(data: list[dict], db: Session) -> tuple:
-    """Save lamps tracking per-row failures. Returns (saved_count, failure_descriptions)."""
+    """Save lamps tracking per-row failures. Returns (saved_count, failure_descriptions, url_map).
+    url_map is a list of (lamp_id, product_url) for lamps that have a product page URL."""
     saved = 0
     failures = []
+    url_map = []
     for idx, item in enumerate(data):
         if not item:
             failures.append(f"row {idx + 1}: empty record")
@@ -210,6 +233,7 @@ def _save_lamps_tracked(data: list[dict], db: Session) -> tuple:
             failures.append(f"row {idx + 1}: missing model (brand: {str(item.get('brand', '?'))[:40]})")
             continue
         try:
+            product_url = str(item.get("url") or "").strip()[:500] or None
             lamp = Lamp(
                 brand=str(item.get("brand") or "Unknown")[:100],
                 model=str(item.get("model") or "Unknown")[:200],
@@ -229,15 +253,50 @@ def _save_lamps_tracked(data: list[dict], db: Session) -> tuple:
                 space_type=str(item.get("space_type") or "")[:200] if item.get("space_type") else "",
                 price_usd=_safe_float(item.get("price_usd")),
                 sku=str(item.get("sku") or "")[:100] if item.get("sku") else "",
+                datasheet_url=product_url or "",
                 description=str(item.get("description") or "")[:500] if item.get("description") else "",
             )
             db.add(lamp)
+            db.flush()  # get the auto-assigned lamp.id before committing
+            if product_url:
+                url_map.append((lamp.id, product_url))
             saved += 1
         except Exception as ex:
             failures.append(f"row {idx + 1}: DB error — {str(ex)[:60]}")
             continue
     db.commit()
-    return saved, failures
+    return saved, failures, url_map
+
+
+def _fetch_product_image(url: str) -> str | None:
+    """Fetch a product page and return its main image URL (og:image preferred).
+    Returns None on any error or if no image is found."""
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; LampAdvisor/1.0; +https://lampadvisor.com)"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            html = resp.read(200_000).decode("utf-8", errors="ignore")
+
+        base = f"{urlparse(url).scheme}://{urlparse(url).netloc}"
+
+        # og:image — two attribute orderings
+        for pattern in (
+            r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\'>\s]+)["\']',
+            r'<meta[^>]+content=["\']([^"\'>\s]+)["\'][^>]+property=["\']og:image["\']',
+            r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\'>\s]+)["\']',
+            r'<meta[^>]+content=["\']([^"\'>\s]+)["\'][^>]+name=["\']twitter:image["\']',
+        ):
+            m = re.search(pattern, html, re.IGNORECASE)
+            if m:
+                img = m.group(1).strip()
+                return urljoin(base, img) if img.startswith("/") else img
+
+        return None
+    except Exception:
+        return None
 
 
 def _safe_float(v) -> float | None:
