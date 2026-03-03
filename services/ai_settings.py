@@ -34,26 +34,26 @@ DEFAULTS = {
 def load() -> dict:
     s = dict(DEFAULTS)
 
-    # 1. Load from settings.json if present
+    # 1. Environment variables as initial defaults
+    if os.getenv("AI_PROVIDER"):  s["provider"] = os.getenv("AI_PROVIDER")
+    if os.getenv("AI_MODEL"):     s["model"]    = os.getenv("AI_MODEL")
+    if os.getenv("AI_API_KEY"):   s["api_key"]  = os.getenv("AI_API_KEY")
+    if os.getenv("AI_BASE_URL"):  s["base_url"] = os.getenv("AI_BASE_URL")
+
+    # Legacy .env key fallbacks
+    if not s["api_key"]:
+        if s["provider"] == "anthropic" and os.getenv("ANTHROPIC_API_KEY"):
+            s["api_key"] = os.getenv("ANTHROPIC_API_KEY")
+        elif s["provider"] == "openai" and os.getenv("OPENAI_API_KEY"):
+            s["api_key"] = os.getenv("OPENAI_API_KEY")
+
+    # 2. settings.json wins — explicit user save always takes priority
     if SETTINGS_FILE.exists():
         try:
             saved = json.loads(SETTINGS_FILE.read_text())
             s.update({k: v for k, v in saved.items() if v})
         except Exception:
             pass
-
-    # 2. Environment variable overrides
-    if os.getenv("AI_PROVIDER"):  s["provider"] = os.getenv("AI_PROVIDER")
-    if os.getenv("AI_MODEL"):     s["model"]    = os.getenv("AI_MODEL")
-    if os.getenv("AI_API_KEY"):   s["api_key"]  = os.getenv("AI_API_KEY")
-    if os.getenv("AI_BASE_URL"):  s["base_url"] = os.getenv("AI_BASE_URL")
-
-    # 3. Legacy .env key fallbacks
-    if not s["api_key"]:
-        if s["provider"] == "anthropic" and os.getenv("ANTHROPIC_API_KEY"):
-            s["api_key"] = os.getenv("ANTHROPIC_API_KEY")
-        elif s["provider"] == "openai" and os.getenv("OPENAI_API_KEY"):
-            s["api_key"] = os.getenv("OPENAI_API_KEY")
 
     return s
 
