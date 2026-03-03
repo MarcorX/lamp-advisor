@@ -82,6 +82,13 @@ app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 @app.on_event("startup")
 def on_startup():
     init_db()
+    from seed_catalog import seed
+    from database import SessionLocal
+    _db = SessionLocal()
+    try:
+        seed(_db)
+    finally:
+        _db.close()
 
 
 # ---------------------------------------------------------------------------
