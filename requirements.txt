@@ -12,3 +12,5 @@ python-dotenv==1.0.1
 sqlalchemy==2.0.35
 pymupdf==1.24.0
 openai>=1.40.0
+passlib[bcrypt]==1.7.4
+itsdangerous>=2.1.2

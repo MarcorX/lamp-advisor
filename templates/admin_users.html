@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}User Management — LampAdvisor{% endblock %}
+{% block content %}
+<div class="p-8 max-w-4xl">
+
+  <div class="mb-6">
+    <h2 class="text-2xl font-bold text-slate-900">User Management</h2>
+    <p class="text-slate-500 mt-1">Approve or remove users who have requested access.</p>
+  </div>
+
+  <!-- Pending -->
+  {% set pending = users | selectattr("is_approved", "equalto", false) | list %}
+  {% if pending %}
+  <div class="mb-6">
+    <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">
+      Pending Approval ({{ pending | length }})
+    </h3>
+    <div class="card divide-y divide-slate-100">
+      {% for u in pending %}
+      <div class="flex items-center gap-4 px-5 py-4">
+        <div class="w-9 h-9 bg-amber-100 rounded-full flex items-center justify-center text-amber-700 font-bold text-sm shrink-0">
+          {{ u.name[0].upper() }}
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="font-medium text-slate-800 text-sm">{{ u.name }}</p>
+          <p class="text-slate-400 text-xs">{{ u.email }} · Registered {{ u.created_at.strftime('%b %d, %Y') }}</p>
+        </div>
+        <div class="flex gap-2 shrink-0">
+          <form method="post" action="/admin/users/{{ u.id }}/approve">
+            <button class="bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
+              Approve
+            </button>
+          </form>
+          <form method="post" action="/admin/users/{{ u.id }}/reject"
+                onsubmit="return confirm('Remove {{ u.name }}?')">
+            <button class="border border-red-200 hover:bg-red-50 text-red-600 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
+              Reject
+            </button>
+          </form>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Active users -->
+  {% set active = users | selectattr("is_approved", "equalto", true) | list %}
+  <div>
+    <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">
+      Active Users ({{ active | length }})
+    </h3>
+    <div class="card divide-y divide-slate-100">
+      {% for u in active %}
+      <div class="flex items-center gap-4 px-5 py-4">
+        <div class="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm shrink-0
+          {% if u.is_admin %}bg-amber-100 text-amber-700{% else %}bg-slate-100 text-slate-600{% endif %}">
+          {{ u.name[0].upper() }}
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2">
+            <p class="font-medium text-slate-800 text-sm">{{ u.name }}</p>
+            {% if u.is_admin %}
+            <span class="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-semibold">Admin</span>
+            {% endif %}
+            {% if u.id == request.state.current_user.id %}
+            <span class="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">You</span>
+            {% endif %}
+          </div>
+          <p class="text-slate-400 text-xs">{{ u.email }} · Joined {{ u.created_at.strftime('%b %d, %Y') }}</p>
+        </div>
+        {% if u.id != request.state.current_user.id %}
+        <div class="flex gap-2 shrink-0">
+          <form method="post" action="/admin/users/{{ u.id }}/toggle-admin">
+            <button class="border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+              {% if u.is_admin %}Remove Admin{% else %}Make Admin{% endif %}
+            </button>
+          </form>
+          <form method="post" action="/admin/users/{{ u.id }}/reject"
+                onsubmit="return confirm('Remove {{ u.name }}?')">
+            <button class="border border-red-200 hover:bg-red-50 text-red-600 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors">
+              Remove
+            </button>
+          </form>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}

@@ -13,13 +13,16 @@ from fastapi import FastAPI, Request, Depends, File, UploadFile, Form, HTTPExcep
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.orm import Session
 import pandas as pd
 from dotenv import load_dotenv
 
 load_dotenv()
 
-from database import init_db, get_db, Lamp, Project, Proposal
+from database import init_db, get_db, Lamp, Project, Proposal, User
+from services.auth import hash_password, verify_password
 from services.file_parser import parse_file
 from services.recommender import get_recommendations
 from services.ai_engine import generate_proposal_narrative
@@ -39,6 +42,41 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+
+SECRET_KEY = os.getenv("SECRET_KEY", "changeme-set-SECRET_KEY-in-production")
+
+# Paths that don't require authentication
+_PUBLIC_PATHS = {"/login", "/register", "/logout", "/pending"}
+
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        is_public = path in _PUBLIC_PATHS or path.startswith("/static")
+
+        uid = request.session.get("user_id")
+        request.state.current_user = None
+
+        if uid:
+            from database import SessionLocal
+            _db = SessionLocal()
+            try:
+                request.state.current_user = _db.query(User).filter(User.id == uid).first()
+            finally:
+                _db.close()
+
+        if not is_public:
+            if not request.state.current_user:
+                return RedirectResponse("/login", status_code=302)
+            if not request.state.current_user.is_approved:
+                return RedirectResponse("/pending", status_code=302)
+
+        return await call_next(request)
+
+
+# SessionMiddleware must be outermost (last added = outermost in Starlette)
+app.add_middleware(AuthMiddleware)
+app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
 
 @app.on_event("startup")
@@ -643,3 +681,141 @@ def download_template():
     csv_content = ",".join(headers) + "\n" + ",".join(sample) + "\n"
     return SR(io.StringIO(csv_content), media_type="text/csv",
               headers={"Content-Disposition": "attachment; filename=lamp_template.csv"})
+
+
+# ---------------------------------------------------------------------------
+# Auth — Login / Register / Logout
+# ---------------------------------------------------------------------------
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    if request.session.get("user_id"):
+        return RedirectResponse("/", status_code=302)
+    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+
+
+@app.post("/login", response_class=HTMLResponse)
+def login_post(
+    request: Request,
+    db: Session = Depends(get_db),
+    email: str = Form(...),
+    password: str = Form(...),
+):
+    user = db.query(User).filter(User.email == email.lower().strip()).first()
+    if not user or not verify_password(password, user.password_hash):
+        return templates.TemplateResponse("login.html", {
+            "request": request, "error": "Invalid email or password."
+        })
+    if not user.is_approved:
+        return templates.TemplateResponse("login.html", {
+            "request": request, "error": "Your account is pending admin approval."
+        })
+    request.session["user_id"] = user.id
+    return RedirectResponse("/", status_code=302)
+
+
+@app.get("/logout")
+def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse("/login", status_code=302)
+
+
+@app.get("/register", response_class=HTMLResponse)
+def register_page(request: Request):
+    if request.session.get("user_id"):
+        return RedirectResponse("/", status_code=302)
+    return templates.TemplateResponse("register.html", {"request": request, "error": None})
+
+
+@app.post("/register", response_class=HTMLResponse)
+def register_post(
+    request: Request,
+    db: Session = Depends(get_db),
+    name: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    password2: str = Form(...),
+):
+    email = email.lower().strip()
+
+    if password != password2:
+        return templates.TemplateResponse("register.html", {
+            "request": request, "error": "Passwords do not match."
+        })
+    if len(password) < 8:
+        return templates.TemplateResponse("register.html", {
+            "request": request, "error": "Password must be at least 8 characters."
+        })
+    if db.query(User).filter(User.email == email).first():
+        return templates.TemplateResponse("register.html", {
+            "request": request, "error": "An account with that email already exists."
+        })
+
+    is_first = db.query(User).count() == 0
+    user = User(
+        email=email,
+        name=name.strip(),
+        password_hash=hash_password(password),
+        is_admin=is_first,
+        is_approved=is_first,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    if is_first:
+        request.session["user_id"] = user.id
+        return RedirectResponse("/", status_code=302)
+
+    return RedirectResponse("/pending", status_code=302)
+
+
+@app.get("/pending", response_class=HTMLResponse)
+def pending_page(request: Request):
+    return templates.TemplateResponse("pending.html", {"request": request})
+
+
+# ---------------------------------------------------------------------------
+# Admin — User Management
+# ---------------------------------------------------------------------------
+@app.get("/admin/users", response_class=HTMLResponse)
+def admin_users(request: Request, db: Session = Depends(get_db)):
+    user = request.state.current_user
+    if not user or not user.is_admin:
+        raise HTTPException(403, "Admin access required")
+    users = db.query(User).order_by(User.created_at.desc()).all()
+    return templates.TemplateResponse("admin_users.html", {
+        "request": request, "users": users
+    })
+
+
+@app.post("/admin/users/{user_id}/approve")
+def admin_approve(user_id: int, request: Request, db: Session = Depends(get_db)):
+    if not request.state.current_user or not request.state.current_user.is_admin:
+        raise HTTPException(403)
+    u = db.query(User).filter(User.id == user_id).first()
+    if u:
+        u.is_approved = True
+        db.commit()
+    return RedirectResponse("/admin/users", status_code=303)
+
+
+@app.post("/admin/users/{user_id}/reject")
+def admin_reject(user_id: int, request: Request, db: Session = Depends(get_db)):
+    if not request.state.current_user or not request.state.current_user.is_admin:
+        raise HTTPException(403)
+    u = db.query(User).filter(User.id == user_id).first()
+    if u and u.id != request.state.current_user.id:  # can't delete yourself
+        db.delete(u)
+        db.commit()
+    return RedirectResponse("/admin/users", status_code=303)
+
+
+@app.post("/admin/users/{user_id}/toggle-admin")
+def admin_toggle(user_id: int, request: Request, db: Session = Depends(get_db)):
+    if not request.state.current_user or not request.state.current_user.is_admin:
+        raise HTTPException(403)
+    u = db.query(User).filter(User.id == user_id).first()
+    if u and u.id != request.state.current_user.id:  # can't demote yourself
+        u.is_admin = not u.is_admin
+        db.commit()
+    return RedirectResponse("/admin/users", status_code=303)

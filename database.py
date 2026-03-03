@@ -79,6 +79,18 @@ class Proposal(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id            = Column(Integer, primary_key=True, index=True)
+    email         = Column(String(200), unique=True, nullable=False, index=True)
+    name          = Column(String(200), nullable=False)
+    password_hash = Column(String(200), nullable=False)
+    is_admin      = Column(Boolean, default=False)
+    is_approved   = Column(Boolean, default=False)
+    created_at    = Column(DateTime, default=datetime.utcnow)
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
 
