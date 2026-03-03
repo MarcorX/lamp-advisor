@@ -73,8 +73,7 @@ def run_analysis(file_path: str, session_id: str, loop: asyncio.AbstractEventLoo
         extracted = result.get("extracted", {})
         rooms_raw = extracted.get("rooms", [])
         rooms = [{"name": r, "sqm": None, "fixtures_recommended": 2, "notes": ""} for r in rooms_raw]
-        emit("done", "Analysis complete (basic extraction)", 100, done=True)
-        return {
+        extracted_dict = {
             "total_sqm": extracted.get("total_sqm"),
             "num_floors": extracted.get("num_floors"),
             "property_type": extracted.get("property_type"),
@@ -84,6 +83,8 @@ def run_analysis(file_path: str, session_id: str, loop: asyncio.AbstractEventLoo
             "special_requirements": "",
             "extracted_notes": result.get("raw_text", "")[:500],
         }
+        emit("done", "Analysis complete (basic extraction)", 100, done=True, data=extracted_dict)
+        return extracted_dict
 
     except Exception as e:
         emit("error", f"Analysis failed: {str(e)}", done=True)
@@ -190,7 +191,7 @@ def _call_ai_vision(raw_text: str, images_b64: list[str], ai, emit) -> dict:
 
         emit("ai", "Parsing analysis results…", 80)
         data = json.loads(response)
-        emit("done", "✓ Project analysis complete", 100, done=True)
+        emit("done", "✓ Project analysis complete", 100, done=True, data=data)
         return data
 
     except Exception as e:

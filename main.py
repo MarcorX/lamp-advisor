@@ -364,6 +364,33 @@ def new_project_form(request: Request):
     return templates.TemplateResponse("project_form.html", {"request": request})
 
 
+@app.post("/api/projects/analyze-preview")
+async def api_analyze_preview(file: UploadFile = File(...)):
+    """Stateless file pre-analysis — streams extracted data via SSE, no DB write."""
+    if not file or not file.filename:
+        raise HTTPException(400, "No file provided")
+    ext = Path(file.filename).suffix.lower()
+    if ext not in (".pdf", ".dwg", ".dxf"):
+        raise HTTPException(400, "Only PDF, DWG, or DXF files are supported")
+    save_path = UPLOAD_DIR / f"preview_{file.filename}"
+    with open(save_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    sid = progress.create_session()
+    loop = asyncio.get_event_loop()
+    threading.Thread(
+        target=_run_preview_analysis,
+        args=(str(save_path), sid, loop),
+        daemon=True,
+    ).start()
+    return JSONResponse({"session_id": sid})
+
+
+def _run_preview_analysis(file_path: str, session_id: str, loop: asyncio.AbstractEventLoop):
+    from services.ai_project_analyzer import run_analysis
+    run_analysis(file_path, session_id, loop)
+    Path(file_path).unlink(missing_ok=True)
+
+
 @app.post("/api/projects/new")
 async def api_new_project(
     request: Request,

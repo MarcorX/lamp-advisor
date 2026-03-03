@@ -39,6 +39,9 @@ TARGET_SCHEMA = """
 """
 
 
+CHUNK_SIZE = 50
+
+
 def run_import(file_path: str, db: Session, session_id: str, loop: asyncio.AbstractEventLoop) -> int:
     """Synchronous worker — run in a background thread."""
 
@@ -49,17 +52,15 @@ def run_import(file_path: str, db: Session, session_id: str, loop: asyncio.Abstr
 
     try:
         ext = Path(file_path).suffix.lower()
+        df = None
         raw_text = ""
-        df_preview = ""
 
         if ext in (".xlsx", ".xls"):
             df = pd.read_excel(file_path)
-            raw_text = f"Columns: {list(df.columns)}\n\nFirst 30 rows:\n{df.head(30).to_string()}"
-            df_preview = df.to_dict(orient="records")
+            emit("reading", f"Read {len(df)} rows from Excel file", 12)
         elif ext == ".csv":
             df = pd.read_csv(file_path)
-            raw_text = f"Columns: {list(df.columns)}\n\nFirst 30 rows:\n{df.head(30).to_string()}"
-            df_preview = df.to_dict(orient="records")
+            emit("reading", f"Read {len(df)} rows from CSV file", 12)
         elif ext == ".pdf":
             import pdfplumber
             with pdfplumber.open(file_path) as pdf:
@@ -72,30 +73,51 @@ def run_import(file_path: str, db: Session, session_id: str, loop: asyncio.Abstr
             emit("error", f"Unsupported file type: {ext}", done=True)
             return 0
 
-        emit("mapping", "AI is mapping columns to lamp schema…", 30)
-
-        api_key = os.getenv("ANTHROPIC_API_KEY", "")
-        lamps_data = []
-
         from services.ai_client import get_client
         ai = get_client()
-        if ai.is_configured():
-            lamps_data = _ai_map(raw_text, ai, emit)
-        else:
-            emit("mapping", "No API key — using column name heuristics…", 35)
-            if isinstance(df_preview, list):
-                lamps_data = _heuristic_map(df_preview, emit)
+        all_lamps: list[dict] = []
+        failed_rows: list[str] = []
+
+        if df is not None:
+            total_rows = len(df)
+            chunks = [df.iloc[i:i + CHUNK_SIZE] for i in range(0, total_rows, CHUNK_SIZE)]
+            num_chunks = len(chunks)
+            emit("mapping", f"Processing {total_rows} rows in {num_chunks} chunk(s) of {CHUNK_SIZE}…", 20)
+
+            if ai.is_configured():
+                for idx, chunk_df in enumerate(chunks):
+                    chunk_num = idx + 1
+                    chunk_progress = 20 + int((idx / num_chunks) * 55)
+                    emit("mapping", f"AI mapping chunk {chunk_num}/{num_chunks} ({len(chunk_df)} rows)…", chunk_progress)
+                    col_header = f"Columns: {list(chunk_df.columns)}\n\n"
+                    chunk_text = col_header + chunk_df.to_string(index=False)
+                    results, chunk_failures = _ai_map_chunk(chunk_text, ai, emit, chunk_num, num_chunks)
+                    all_lamps.extend(results)
+                    failed_rows.extend(chunk_failures)
+                    emit("mapping", f"Chunk {chunk_num}/{num_chunks}: {len(results)} lamps mapped", chunk_progress + 2)
             else:
-                emit("error", "Cannot map PDF catalog without Claude API key.", done=True)
+                emit("mapping", "No API key — using column name heuristics…", 35)
+                all_lamps = _heuristic_map(df.to_dict(orient="records"), emit)
+        else:
+            # PDF path — single call, no chunking
+            if ai.is_configured():
+                all_lamps, failed_rows = _ai_map_chunk(raw_text, ai, emit, 1, 1)
+            else:
+                emit("error", "Cannot map PDF catalog without an AI API key.", done=True)
                 return 0
 
-        if not lamps_data:
+        if not all_lamps:
             emit("error", "No lamps could be extracted from the file.", done=True)
             return 0
 
-        emit("saving", f"Saving {len(lamps_data)} lamps to database…", 80)
-        saved = _save_lamps(lamps_data, db)
-        emit("done", f"✓ {saved} lamps imported successfully!", 100, done=True, count=saved)
+        emit("saving", f"Saving {len(all_lamps)} lamps to database…", 80)
+        saved, save_failures = _save_lamps_tracked(all_lamps, db)
+        failed_rows.extend(save_failures)
+
+        n_failed = len(failed_rows)
+        suffix = f", {n_failed} rows skipped" if n_failed else ""
+        emit("done", f"✓ {saved} lamps imported successfully{suffix}", 100,
+             done=True, count=saved, failed=n_failed, failed_samples=failed_rows[:5])
         return saved
 
     except Exception as e:
@@ -103,40 +125,44 @@ def run_import(file_path: str, db: Session, session_id: str, loop: asyncio.Abstr
         return 0
 
 
-def _ai_map(raw_text: str, ai, emit) -> list[dict]:
-    """Ask AI to map the raw catalog data to the lamp schema."""
+def _ai_map_chunk(chunk_text: str, ai, emit, chunk_num: int, total_chunks: int) -> tuple:
+    """Map one chunk of catalog text to lamp schema. Returns (lamps, failure_descriptions)."""
+    failures = []
     try:
-        prompt = f"""You are a data engineer. Below is raw product catalog data.
-Map EVERY product to the JSON schema and return a JSON array.
+        prompt = f"""You are a data engineer. Below is raw product catalog data (chunk {chunk_num} of {total_chunks}).
+Map EVERY product row to the JSON schema and return a JSON array.
 If a field is missing or unclear, use null.
-For property_level: infer from price or product description (basic <$30, mid $30-100, premium $100-300, luxury >$300).
+For property_level: infer from price or description (basic <$30, mid $30-100, premium $100-300, luxury >$300).
 For indoor_outdoor: infer from IP rating (IP44+ = outdoor capable).
-Return ONLY a valid JSON array, no explanation.
+Return ONLY a valid JSON array, no explanation, no markdown fences.
 
 TARGET SCHEMA:
 {TARGET_SCHEMA}
 
 CATALOG DATA:
-{raw_text[:12000]}"""
+{chunk_text}"""
 
-        emit("mapping", f"Sending to {ai.provider} ({ai.model})…", 50)
         content = ai.complete(
             messages=[{"role": "user", "content": prompt}],
             max_tokens=8000,
         )
-
-        # Strip markdown fences if present
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0].strip()
         elif "```" in content:
             content = content.split("```")[1].split("```")[0].strip()
 
-        emit("mapping", "Parsing Claude response…", 70)
-        return json.loads(content)
+        results = json.loads(content)
+        if not isinstance(results, list):
+            failures.append(f"chunk {chunk_num}: AI returned non-list response")
+            return [], failures
+        return results, failures
 
+    except json.JSONDecodeError as e:
+        failures.append(f"chunk {chunk_num}: JSON parse error — {str(e)[:80]}")
+        return [], failures
     except Exception as e:
-        emit("mapping", f"AI mapping failed ({e}), falling back to heuristics…", 55)
-        return []
+        failures.append(f"chunk {chunk_num}: AI call failed — {str(e)[:80]}")
+        return [], failures
 
 
 def _heuristic_map(records: list[dict], emit) -> list[dict]:
@@ -169,10 +195,19 @@ def _heuristic_map(records: list[dict], emit) -> list[dict]:
     return result
 
 
-def _save_lamps(data: list[dict], db: Session) -> int:
+def _save_lamps_tracked(data: list[dict], db: Session) -> tuple:
+    """Save lamps tracking per-row failures. Returns (saved_count, failure_descriptions)."""
     saved = 0
-    for item in data:
-        if not item or not item.get("brand") or not item.get("model"):
+    failures = []
+    for idx, item in enumerate(data):
+        if not item:
+            failures.append(f"row {idx + 1}: empty record")
+            continue
+        if not item.get("brand"):
+            failures.append(f"row {idx + 1}: missing brand (model: {str(item.get('model', '?'))[:40]})")
+            continue
+        if not item.get("model"):
+            failures.append(f"row {idx + 1}: missing model (brand: {str(item.get('brand', '?'))[:40]})")
             continue
         try:
             lamp = Lamp(
@@ -198,10 +233,11 @@ def _save_lamps(data: list[dict], db: Session) -> int:
             )
             db.add(lamp)
             saved += 1
-        except Exception:
+        except Exception as ex:
+            failures.append(f"row {idx + 1}: DB error — {str(ex)[:60]}")
             continue
     db.commit()
-    return saved
+    return saved, failures
 
 
 def _safe_float(v) -> float | None:

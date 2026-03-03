@@ -97,11 +97,27 @@
     </div>
 
     <!-- Done Actions -->
-    <div x-show="done && !error" class="mt-5 flex gap-3">
-      <a href="/lamps" class="flex-1 btn-primary py-3 text-center text-base">
-        View Catalog (<span x-text="importedCount"></span> lamps) →
-      </a>
-      <button @click="reset" class="btn-secondary">Import Another</button>
+    <div x-show="done && !error" class="mt-5 space-y-3">
+      <div class="text-sm text-slate-700">
+        <span class="font-semibold text-emerald-600" x-text="importedCount"></span> lamps imported successfully
+        <template x-if="failedCount > 0">
+          <span>,&nbsp;<span class="font-semibold text-amber-600" x-text="failedCount"></span> rows skipped</span>
+        </template>
+      </div>
+      <template x-if="failedSamples.length > 0">
+        <div class="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          <p class="text-xs font-semibold text-amber-800 mb-1">Skipped rows (samples):</p>
+          <template x-for="(sample, i) in failedSamples" :key="i">
+            <p class="text-xs text-amber-700 font-mono" x-text="'• ' + sample"></p>
+          </template>
+        </div>
+      </template>
+      <div class="flex gap-3">
+        <a href="/lamps" class="flex-1 btn-primary py-3 text-center text-base">
+          View Catalog (<span x-text="importedCount"></span> lamps) →
+        </a>
+        <button @click="reset" class="btn-secondary">Import Another</button>
+      </div>
     </div>
     <div x-show="done && error" class="mt-5">
       <div class="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm mb-3" x-text="errorMsg"></div>
@@ -162,6 +178,8 @@ function importFlow() {
     errorMsg: '',
     progressPct: 0,
     importedCount: 0,
+    failedCount: 0,
+    failedSamples: [],
     log: [],
     steps: [
       { label: 'Reading file', detail: '', active: false, done: false },
@@ -178,6 +196,8 @@ function importFlow() {
       this.errorMsg = '';
       this.progressPct = 0;
       this.importedCount = 0;
+      this.failedCount = 0;
+      this.failedSamples = [];
       this.log = [];
       this.steps.forEach(s => { s.active = false; s.done = false; s.detail = ''; });
       document.getElementById('catalogFile').value = '';
@@ -242,6 +262,8 @@ function importFlow() {
             this.errorMsg = data.msg || 'Import failed';
           } else {
             this.importedCount = data.count || 0;
+            this.failedCount = data.failed || 0;
+            this.failedSamples = data.failed_samples || [];
           }
         }
       };
