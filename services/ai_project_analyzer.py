@@ -129,7 +129,22 @@ def _analyze_cad_with_ai(file_path: str, ai, emit) -> dict:
     emit("extract", "Parsing DWG/DXF file…", 15)
     try:
         import ezdxf
-        doc = ezdxf.readfile(file_path)
+        try:
+            doc = ezdxf.readfile(file_path)
+        except Exception as dwg_err:
+            # ezdxf only supports DXF — binary DWG files fail here.
+            # Fall back: try to extract any readable ASCII text from the binary.
+            emit("extract", "Binary DWG format — attempting text extraction (convert to DXF/PDF for best results)…", 20)
+            raw_bytes = Path(file_path).read_bytes()
+            # Pull printable ASCII runs of 4+ chars from the binary
+            import re
+            texts_raw = re.findall(rb'[ -~]{4,}', raw_bytes)
+            raw_text = "\n".join(t.decode("ascii", errors="ignore") for t in texts_raw[:300])
+            if not raw_text.strip():
+                emit("error", "Could not read DWG file. Please export it as DXF or PDF from AutoCAD and re-upload.", done=True)
+                return {}
+            emit("extract", f"Extracted {len(raw_text)} characters of text from binary DWG", 40)
+            return _call_ai_vision(raw_text, [], ai, emit)
         msp = doc.modelspace()
 
         texts = []

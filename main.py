@@ -311,6 +311,17 @@ def lamp_delete(lamp_id: int, db: Session = Depends(get_db)):
     return RedirectResponse("/lamps", status_code=303)
 
 
+@app.post("/lamps/clear-all")
+def lamps_clear_all(request: Request, db: Session = Depends(get_db)):
+    """Delete all lamps from the catalog (admin only)."""
+    user = request.state.current_user
+    if not user or not user.is_admin:
+        raise HTTPException(403, "Admin access required")
+    deleted = db.query(Lamp).delete()
+    db.commit()
+    return RedirectResponse(f"/lamps?cleared={deleted}", status_code=303)
+
+
 # ---------------------------------------------------------------------------
 # Lamp Import — AI-powered
 # ---------------------------------------------------------------------------
