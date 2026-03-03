@@ -88,16 +88,25 @@ def run_import(file_path: str, db: Session, session_id: str, loop: asyncio.Abstr
             emit("mapping", f"Processing {total_rows} rows in {num_chunks} chunk(s) of {CHUNK_SIZE}…", 20)
 
             if ai.is_configured():
+                ai_chunk_failures = 0
                 for idx, chunk_df in enumerate(chunks):
                     chunk_num = idx + 1
                     chunk_progress = 20 + int((idx / num_chunks) * 55)
                     emit("mapping", f"AI mapping chunk {chunk_num}/{num_chunks} ({len(chunk_df)} rows)…", chunk_progress)
-                    col_header = f"Columns: {list(chunk_df.columns)}\n\n"
-                    chunk_text = col_header + chunk_df.to_string(index=False)
+                    # CSV is compact and never truncates values (unlike to_string)
+                    chunk_text = chunk_df.to_csv(index=False)
                     results, chunk_failures = _ai_map_chunk(chunk_text, ai, emit, chunk_num, num_chunks)
                     all_lamps.extend(results)
                     failed_rows.extend(chunk_failures)
+                    if not results:
+                        ai_chunk_failures += 1
                     emit("mapping", f"Chunk {chunk_num}/{num_chunks}: {len(results)} lamps mapped", chunk_progress + 2)
+
+                # If ALL chunks failed AI mapping, fall back to heuristics
+                if ai_chunk_failures == num_chunks and num_chunks > 0:
+                    emit("mapping", f"⚠ AI mapping failed for all {num_chunks} chunks — falling back to column-name heuristics…", 72)
+                    all_lamps = _heuristic_map(df.to_dict(orient="records"), emit)
+                    failed_rows = []  # reset — heuristic rows are reported differently
             else:
                 emit("mapping", "No API key — using column name heuristics…", 35)
                 all_lamps = _heuristic_map(df.to_dict(orient="records"), emit)
@@ -165,10 +174,21 @@ CATALOG DATA:
             messages=[{"role": "user", "content": prompt}],
             max_tokens=8000,
         )
+
+        # Strip markdown fences if present
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0].strip()
         elif "```" in content:
             content = content.split("```")[1].split("```")[0].strip()
+
+        # Bracket-scan fallback: find the outermost JSON array even if
+        # Claude added preamble/postamble text around it
+        content = content.strip()
+        if not content.startswith("["):
+            start = content.find("[")
+            end = content.rfind("]")
+            if start != -1 and end > start:
+                content = content[start:end + 1]
 
         results = json.loads(content)
         if not isinstance(results, list):
@@ -177,10 +197,10 @@ CATALOG DATA:
         return results, failures
 
     except json.JSONDecodeError as e:
-        failures.append(f"chunk {chunk_num}: JSON parse error — {str(e)[:80]}")
+        failures.append(f"chunk {chunk_num}: JSON parse error — {str(e)[:100]}")
         return [], failures
     except Exception as e:
-        failures.append(f"chunk {chunk_num}: AI call failed — {str(e)[:80]}")
+        failures.append(f"chunk {chunk_num}: AI call failed — {str(e)[:100]}")
         return [], failures
 
 

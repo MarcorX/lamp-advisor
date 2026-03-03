@@ -91,7 +91,7 @@
       <template x-for="(line, i) in log" :key="i">
         <div class="leading-relaxed">
           <span class="text-slate-600">›</span>
-          <span :class="line.includes('✓') ? 'text-emerald-400' : line.includes('Error') ? 'text-red-400' : 'text-slate-300'" x-text="' ' + line"></span>
+          <span :class="line.includes('✓') ? 'text-emerald-400' : (line.toLowerCase().includes('error') || line.includes('failed') || line.includes('⚠')) ? 'text-red-400' : 'text-slate-300'" x-text="' ' + line"></span>
         </div>
       </template>
     </div>
@@ -185,8 +185,9 @@ function importFlow() {
       { label: 'Reading file', detail: '', active: false, done: false },
       { label: 'AI mapping columns', detail: '', active: false, done: false },
       { label: 'Saving to database', detail: '', active: false, done: false },
+      { label: 'Fetching product images', detail: '', active: false, done: false },
     ],
-    stepMap: { reading: 0, mapping: 1, saving: 2 },
+    stepMap: { reading: 0, mapping: 1, saving: 2, images: 3 },
 
     reset() {
       this.fileName = '';
