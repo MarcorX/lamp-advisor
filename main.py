@@ -31,6 +31,7 @@ from services.ai_catalog_importer import run_import
 from services.ai_project_analyzer import run_analysis
 from services.chat_handler import handle_message
 from services.ai_settings import load as load_settings, save as save_settings, provider_models
+import services.agent as agent_svc
 
 # ---------------------------------------------------------------------------
 # Setup
@@ -469,6 +470,98 @@ async def api_refine_analysis(request: Request):
         return JSONResponse({"data": data})
     except Exception as e:
         raise HTTPException(500, f"Refinement failed: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# AI Lighting Agent routes
+# ---------------------------------------------------------------------------
+
+@app.get("/agent")
+def agent_page(request: Request):
+    return templates.TemplateResponse("project_agent.html", {"request": request})
+
+
+@app.post("/api/agent/start")
+async def api_agent_start(files: List[UploadFile] = File(...)):
+    """Upload files → start AI analysis → SSE stream with progress + first agent message."""
+    if not files:
+        raise HTTPException(400, "No files provided")
+    saved: list[str] = []
+    for f in files:
+        if not f or not f.filename:
+            continue
+        ext = Path(f.filename).suffix.lower()
+        if ext not in (".pdf", ".dwg", ".dxf"):
+            raise HTTPException(400, f"Unsupported file type: {f.filename}")
+        dest = UPLOAD_DIR / f"agent_{f.filename}"
+        with open(dest, "wb") as out:
+            shutil.copyfileobj(f.file, out)
+        saved.append(str(dest))
+    if not saved:
+        raise HTTPException(400, "No valid files provided")
+    sid = progress.create_session()
+    loop = asyncio.get_event_loop()
+    threading.Thread(
+        target=_run_agent_analysis,
+        args=(saved, sid, loop),
+        daemon=True,
+    ).start()
+    return JSONResponse({"session_id": sid})
+
+
+def _run_agent_analysis(file_paths: list, session_id: str, loop: asyncio.AbstractEventLoop):
+    agent_svc.analyze_project(file_paths, session_id, loop)
+    for p in file_paths:
+        Path(p).unlink(missing_ok=True)
+
+
+@app.post("/api/agent/chat")
+async def api_agent_chat(request: Request):
+    """Continue the agent conversation. Body: {messages: [{role, content}, ...]}."""
+    body = await request.json()
+    messages = body.get("messages") or []
+    if not messages:
+        raise HTTPException(400, "messages required")
+    from services.ai_client import get_client
+    ai = get_client()
+    if not ai.is_configured():
+        raise HTTPException(503, "AI not configured")
+    try:
+        reply = agent_svc.chat_turn(messages, ai)
+        return JSONResponse({"reply": reply})
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.post("/api/agent/brief")
+async def api_agent_brief(request: Request):
+    """Generate structured requirements brief from conversation. Body: {messages: [...]}."""
+    body = await request.json()
+    messages = body.get("messages") or []
+    from services.ai_client import get_client
+    ai = get_client()
+    if not ai.is_configured():
+        raise HTTPException(503, "AI not configured")
+    try:
+        brief = agent_svc.generate_brief(messages, ai)
+        return JSONResponse({"brief": brief})
+    except Exception as e:
+        raise HTTPException(500, f"Brief generation failed: {str(e)}")
+
+
+@app.post("/api/agent/propose")
+async def api_agent_propose(request: Request, db: Session = Depends(get_db)):
+    """Match brief requirements against catalog. Body: {brief: [...]}."""
+    body = await request.json()
+    brief = body.get("brief") or []
+    if not brief:
+        raise HTTPException(400, "brief required")
+    try:
+        items = agent_svc.match_catalog(brief, db)
+        total = round(sum(i["subtotal"] for i in items), 2)
+        return JSONResponse({"items": items, "total": total})
+    except Exception as e:
+        raise HTTPException(500, str(e))
 
 
 @app.post("/api/projects/new")

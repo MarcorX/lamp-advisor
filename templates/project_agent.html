@@ -1,0 +1,524 @@
+{% extends "base.html" %}
+{% block title %}AI Lighting Agent — LampAdvisor{% endblock %}
+{% block content %}
+<div class="h-full flex flex-col" x-data="lightingAgent()" style="height: calc(100vh - 0px);">
+
+  <!-- ══════════════════════════════════════════════════════════════
+       PHASE: UPLOAD
+  ══════════════════════════════════════════════════════════════ -->
+  <div x-show="phase === 'upload'" class="flex-1 flex flex-col items-center justify-center p-8">
+    <div class="w-full max-w-xl">
+      <!-- Header -->
+      <div class="text-center mb-8">
+        <div class="w-16 h-16 bg-amber-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+          <svg class="w-8 h-8 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+        </div>
+        <h1 class="text-2xl font-bold text-slate-900">AI Lighting Agent</h1>
+        <p class="text-slate-500 mt-1 text-sm">Upload your floor plans and I'll analyze them as an expert lighting designer — then we'll work together to finalize the specification.</p>
+      </div>
+
+      <!-- Drop zone -->
+      <label class="flex flex-col items-center justify-center border-2 border-dashed rounded-2xl p-10 cursor-pointer transition-all"
+             :class="fileNames.length ? 'border-amber-400 bg-amber-50' : 'border-slate-200 hover:border-amber-300 hover:bg-amber-50'">
+        <div class="w-12 h-12 rounded-xl mb-3 flex items-center justify-center"
+             :class="fileNames.length ? 'bg-amber-100 text-amber-600' : 'bg-slate-100 text-slate-400'">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+        </div>
+        <template x-if="fileNames.length === 0">
+          <div class="text-center">
+            <p class="font-medium text-slate-700">Drop your floor plans here</p>
+            <p class="text-xs text-slate-400 mt-1">PDF, DWG, or DXF · up to 3 files · max 50 MB each</p>
+          </div>
+        </template>
+        <template x-if="fileNames.length > 0">
+          <div class="text-center">
+            <template x-for="(n, i) in fileNames" :key="i">
+              <p class="text-sm font-medium text-amber-700" x-text="(fileNames.length > 1 ? (i+1)+'. ' : '') + n"></p>
+            </template>
+            <p class="text-xs text-amber-500 mt-1" x-text="fileNames.length + ' file' + (fileNames.length > 1 ? 's' : '') + ' selected'"></p>
+          </div>
+        </template>
+        <input type="file" id="agentFiles" accept=".pdf,.dwg,.dxf" multiple class="hidden"
+               @change="onFilesSelected($event)"/>
+      </label>
+
+      <button x-show="fileNames.length > 0" @click="startAnalysis()"
+              class="mt-4 w-full btn-primary py-3.5 text-base font-semibold flex items-center justify-center gap-2">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        <span x-text="fileNames.length > 1 ? `Analyze ${fileNames.length} Files` : 'Analyze File'"></span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       PHASE: ANALYZING
+  ══════════════════════════════════════════════════════════════ -->
+  <div x-show="phase === 'analyzing'" class="flex-1 flex flex-col items-center justify-center p-8" x-cloak>
+    <div class="w-full max-w-lg card p-8">
+      <div class="flex items-center gap-3 mb-6">
+        <div class="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center animate-pulse">
+          <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        </div>
+        <div>
+          <h2 class="font-semibold text-slate-900">Analyzing your project…</h2>
+          <p class="text-xs text-slate-400">Claude is reading the floor plans</p>
+        </div>
+      </div>
+      <div class="w-full bg-slate-100 rounded-full h-2 mb-4">
+        <div class="bg-amber-500 h-2 rounded-full transition-all duration-500" :style="`width:${analysisProgress}%`"></div>
+      </div>
+      <div class="bg-slate-900 rounded-xl p-4 font-mono text-xs h-32 overflow-y-auto" id="agentLog">
+        <template x-for="(line, i) in analysisLog" :key="i">
+          <div class="leading-relaxed">
+            <span class="text-slate-600">›</span>
+            <span class="text-slate-300" x-text="' ' + line"></span>
+          </div>
+        </template>
+        <div class="text-amber-400 animate-pulse">_</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       PHASE: CHAT  (analysis done, user refines)
+  ══════════════════════════════════════════════════════════════ -->
+  <div x-show="phase === 'chat'" class="flex-1 flex flex-col overflow-hidden" x-cloak>
+
+    <!-- Top bar -->
+    <div class="flex items-center justify-between px-6 py-3 border-b border-slate-100 bg-white shrink-0">
+      <div class="flex items-center gap-2">
+        <div class="w-7 h-7 bg-amber-500 rounded-lg flex items-center justify-center">
+          <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+        </div>
+        <span class="font-semibold text-slate-900 text-sm">Alex · AI Lighting Specialist</span>
+        <span class="w-2 h-2 bg-emerald-400 rounded-full" title="Online"></span>
+      </div>
+      <button @click="generateBrief()"
+              class="btn-primary text-sm py-2 flex items-center gap-2">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+        Generate Requirements Brief →
+      </button>
+    </div>
+
+    <!-- Messages -->
+    <div class="flex-1 overflow-y-auto px-6 py-5 space-y-4" id="chatMessages">
+      <template x-for="(msg, i) in messages" :key="i">
+        <div :class="msg.role === 'user' ? 'flex justify-end' : 'flex justify-start'">
+          <div :class="msg.role === 'user'
+              ? 'bg-blue-600 text-white rounded-2xl rounded-tr-sm px-4 py-3 max-w-[75%] text-sm'
+              : 'bg-white border border-slate-200 rounded-2xl rounded-tl-sm px-4 py-3 max-w-[85%] shadow-sm'">
+            <!-- Agent avatar for first message in a sequence -->
+            <div x-show="msg.role === 'assistant'" class="flex items-center gap-2 mb-2">
+              <div class="w-5 h-5 bg-amber-500 rounded flex items-center justify-center shrink-0">
+                <span class="text-white text-[9px] font-bold">AI</span>
+              </div>
+              <span class="text-xs font-semibold text-amber-700">Alex</span>
+            </div>
+            <div :class="msg.role === 'assistant' ? 'prose prose-sm prose-slate max-w-none text-sm' : 'text-sm'"
+                 x-html="msg.role === 'assistant' ? renderMarkdown(msg.content) : escapeHtml(msg.content)"></div>
+          </div>
+        </div>
+      </template>
+      <!-- Typing indicator -->
+      <div x-show="agentTyping" class="flex justify-start">
+        <div class="bg-white border border-slate-200 rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm flex items-center gap-1.5">
+          <div class="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style="animation-delay:0ms"></div>
+          <div class="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style="animation-delay:150ms"></div>
+          <div class="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style="animation-delay:300ms"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div class="border-t border-slate-100 bg-white px-4 py-3 shrink-0">
+      <div class="flex gap-2">
+        <input type="text" x-model="userInput"
+               @keydown.enter.prevent="sendMessage()"
+               :disabled="agentTyping || briefLoading"
+               placeholder="e.g. The kitchen is 25m², add a terrace with IP65 lighting…"
+               class="flex-1 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-amber-400 bg-white disabled:opacity-50"/>
+        <button @click="sendMessage()" :disabled="!userInput.trim() || agentTyping || briefLoading"
+                class="bg-amber-500 hover:bg-amber-600 text-white rounded-xl px-4 py-2.5 disabled:opacity-40 transition-colors shrink-0">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       PHASE: BRIEF GENERATING
+  ══════════════════════════════════════════════════════════════ -->
+  <div x-show="phase === 'briefing'" class="flex-1 flex items-center justify-center p-8" x-cloak>
+    <div class="text-center">
+      <div class="w-14 h-14 bg-amber-100 rounded-2xl flex items-center justify-center mx-auto mb-4 animate-pulse">
+        <svg class="w-7 h-7 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+      </div>
+      <p class="font-semibold text-slate-700">Generating requirements brief…</p>
+      <p class="text-sm text-slate-400 mt-1">Compiling the full lighting specification</p>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       PHASE: BRIEF  (requirements list + propose button)
+  ══════════════════════════════════════════════════════════════ -->
+  <div x-show="phase === 'brief'" class="flex-1 overflow-y-auto p-6" x-cloak>
+    <div class="max-w-3xl mx-auto space-y-5">
+
+      <!-- Header -->
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-bold text-slate-900">Lighting Requirements Brief</h2>
+          <p class="text-sm text-slate-500 mt-0.5" x-text="`${brief.length} fixture groups · ${brief.reduce((s,i)=>s+(i.qty||0),0)} fixtures total`"></p>
+        </div>
+        <div class="flex gap-2">
+          <button @click="phase = 'chat'" class="btn-secondary text-sm py-2">← Edit</button>
+          <button @click="generateProposal()"
+                  class="btn-primary text-sm py-2 flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+            Find Products in Catalog →
+          </button>
+        </div>
+      </div>
+
+      <!-- Brief cards -->
+      <div class="space-y-2">
+        <template x-for="(item, i) in brief" :key="i">
+          <div class="card px-5 py-4 flex items-start gap-4">
+            <!-- Number badge -->
+            <div class="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold text-slate-500 mt-0.5" x-text="i+1"></div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <p class="font-semibold text-slate-900" x-text="item.label || item.space || 'Fixture group'"></p>
+                  <p x-show="item.space && item.label" class="text-xs text-slate-400" x-text="item.space"></p>
+                </div>
+                <div class="text-right shrink-0">
+                  <span class="text-lg font-bold text-slate-800" x-text="item.linear_meters ? item.linear_meters + ' m' : item.qty + '×'"></span>
+                  <p class="text-xs text-slate-400 capitalize" x-text="item.category"></p>
+                </div>
+              </div>
+              <!-- Spec chips -->
+              <div class="flex flex-wrap gap-1.5 mt-2">
+                <template x-if="item.cct">
+                  <span class="badge bg-orange-100 text-orange-700" x-text="item.cct"></span>
+                </template>
+                <template x-if="item.lumens_min">
+                  <span class="badge bg-amber-100 text-amber-700" x-text="item.lumens_min + ' lm min'"></span>
+                </template>
+                <template x-if="item.watts_max">
+                  <span class="badge bg-yellow-100 text-yellow-700" x-text="'≤' + item.watts_max + 'W'"></span>
+                </template>
+                <template x-if="item.cri_min">
+                  <span class="badge bg-blue-100 text-blue-700" x-text="'CRI ' + item.cri_min + '+'"></span>
+                </template>
+                <template x-if="item.dimmable">
+                  <span class="badge bg-purple-100 text-purple-700">Dimmable</span>
+                </template>
+                <template x-if="item.ip_required && item.ip_required !== 'IP20'">
+                  <span class="badge bg-cyan-100 text-cyan-700" x-text="item.ip_required"></span>
+                </template>
+                <template x-if="item.beam_angle">
+                  <span class="badge bg-slate-100 text-slate-600" x-text="item.beam_angle + '°'"></span>
+                </template>
+              </div>
+              <p x-show="item.notes" class="text-xs text-slate-400 mt-1.5 italic" x-text="item.notes"></p>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       PHASE: PROPOSING
+  ══════════════════════════════════════════════════════════════ -->
+  <div x-show="phase === 'proposing'" class="flex-1 flex items-center justify-center p-8" x-cloak>
+    <div class="text-center">
+      <div class="w-14 h-14 bg-amber-100 rounded-2xl flex items-center justify-center mx-auto mb-4 animate-pulse">
+        <svg class="w-7 h-7 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+      </div>
+      <p class="font-semibold text-slate-700">Searching the catalog…</p>
+      <p class="text-sm text-slate-400 mt-1">Matching your requirements to available products</p>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════
+       PHASE: PROPOSAL
+  ══════════════════════════════════════════════════════════════ -->
+  <div x-show="phase === 'proposal'" class="flex-1 overflow-y-auto p-6" x-cloak>
+    <div class="max-w-3xl mx-auto space-y-5">
+
+      <!-- Header -->
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-bold text-slate-900">Lighting Proposal</h2>
+          <p class="text-sm text-slate-500 mt-0.5" x-text="`${proposal.length} line items`"></p>
+        </div>
+        <div class="flex gap-2">
+          <button @click="phase = 'brief'" class="btn-secondary text-sm py-2">← Brief</button>
+          <button @click="phase = 'chat'" class="btn-secondary text-sm py-2">Chat</button>
+        </div>
+      </div>
+
+      <!-- Line items -->
+      <div class="card overflow-hidden">
+        <div class="divide-y divide-slate-50">
+          <template x-for="(item, i) in proposal" :key="i">
+            <div class="px-5 py-4 flex items-start gap-4 hover:bg-slate-50 transition-colors">
+              <!-- Thumbnail -->
+              <div class="w-16 h-16 rounded-lg border border-slate-100 bg-slate-50 flex items-center justify-center shrink-0 overflow-hidden">
+                <template x-if="item.lamp_image">
+                  <img :src="item.lamp_image" :alt="item.lamp_brand"
+                       class="w-full h-full object-contain"
+                       onerror="this.parentNode.innerHTML='<svg class=\'w-6 h-6 text-slate-300\' fill=\'none\' stroke=\'currentColor\' viewBox=\'0 0 24 24\'><path stroke-linecap=\'round\' stroke-linejoin=\'round\' stroke-width=\'1.5\' d=\'M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z\'/>\'">
+                </template>
+                <template x-if="!item.lamp_image">
+                  <svg class="w-6 h-6 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+                </template>
+              </div>
+
+              <!-- Info -->
+              <div class="flex-1 min-w-0">
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <p class="text-xs text-slate-400 font-medium" x-text="item.label || item.space"></p>
+                    <a :href="item.lamp_url || '#'" target="_blank" rel="noopener"
+                       class="font-semibold text-slate-900 hover:text-amber-600 transition-colors"
+                       x-text="item.lamp_brand + ' — ' + item.lamp_model"></a>
+                  </div>
+                  <div class="text-right shrink-0">
+                    <p class="font-bold text-slate-900" x-text="item.lamp_price ? '$' + item.lamp_price.toFixed(2) : '—'"></p>
+                    <p class="text-xs text-slate-400" x-text="item.qty + '× = $' + (item.subtotal || 0).toFixed(2)"></p>
+                  </div>
+                </div>
+                <!-- Product specs -->
+                <div class="flex flex-wrap gap-1.5 mt-2">
+                  <template x-if="item.lamp_category">
+                    <span class="badge bg-slate-100 text-slate-600 capitalize" x-text="item.lamp_category"></span>
+                  </template>
+                  <template x-if="item.lamp_cct">
+                    <span class="badge bg-orange-100 text-orange-700" x-text="item.lamp_cct"></span>
+                  </template>
+                  <template x-if="item.lamp_lumens">
+                    <span class="badge bg-amber-100 text-amber-700" x-text="item.lamp_lumens + ' lm'"></span>
+                  </template>
+                  <template x-if="item.lamp_wattage">
+                    <span class="badge bg-yellow-100 text-yellow-700" x-text="item.lamp_wattage + 'W'"></span>
+                  </template>
+                  <template x-if="item.lamp_cri">
+                    <span class="badge bg-blue-100 text-blue-700" x-text="'CRI ' + item.lamp_cri"></span>
+                  </template>
+                  <template x-if="item.lamp_dimmable">
+                    <span class="badge bg-purple-100 text-purple-700">Dimmable</span>
+                  </template>
+                  <template x-if="item.lamp_ip">
+                    <span class="badge bg-cyan-100 text-cyan-700" x-text="item.lamp_ip"></span>
+                  </template>
+                </div>
+                <!-- Requirement vs match note -->
+                <div x-show="item.req_cct && item.lamp_cct && item.req_cct !== item.lamp_cct"
+                     class="mt-1.5 text-[10px] text-amber-600 flex items-center gap-1">
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                  <span x-text="'Required ' + item.req_cct + ', closest match is ' + item.lamp_cct"></span>
+                </div>
+              </div>
+
+              <!-- Qty badge -->
+              <div class="text-center shrink-0 w-10">
+                <div class="w-10 h-10 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-center">
+                  <span class="text-sm font-bold text-amber-700" x-text="item.qty + '×'"></span>
+                </div>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <!-- Totals -->
+        <div class="px-5 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+          <div>
+            <p class="text-sm text-slate-600" x-text="`${proposal.reduce((s,i)=>s+i.qty,0)} fixtures across ${proposal.length} groups`"></p>
+          </div>
+          <div class="text-right">
+            <p class="text-xs text-slate-400">Estimated Total</p>
+            <p class="text-2xl font-bold text-slate-900" x-text="'$' + proposalTotal.toFixed(2)"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- No catalog warning -->
+      <div x-show="proposal.length === 0" class="card p-8 text-center text-slate-500">
+        <p class="font-medium">No matching products found in the catalog.</p>
+        <p class="text-sm mt-1">Import a catalog first, then come back to generate a proposal.</p>
+        <a href="/lamps/import" class="btn-primary mt-4 inline-block">Import Catalog</a>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function lightingAgent() {
+  return {
+    phase: 'upload',          // upload | analyzing | chat | briefing | brief | proposing | proposal
+    fileNames: [],
+    analysisProgress: 0,
+    analysisLog: [],
+    messages: [],             // [{role:'user'|'assistant', content:'...'}]
+    userInput: '',
+    agentTyping: false,
+    briefLoading: false,
+    brief: [],
+    proposal: [],
+    proposalTotal: 0,
+
+    onFilesSelected(event) {
+      this.fileNames = Array.from(event.target.files).map(f => f.name);
+    },
+
+    async startAnalysis() {
+      const fileInput = document.getElementById('agentFiles');
+      if (!fileInput.files.length) return;
+
+      this.phase = 'analyzing';
+      this.analysisProgress = 5;
+      this.analysisLog = [];
+      this.messages = [];
+
+      const fd = new FormData();
+      for (const f of fileInput.files) fd.append('files', f);
+
+      try {
+        const res = await fetch('/api/agent/start', { method: 'POST', body: fd });
+        if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Upload failed'); }
+        const { session_id } = await res.json();
+        this._watchAnalysis(session_id);
+      } catch(e) {
+        this.phase = 'upload';
+        alert('Error: ' + e.message);
+      }
+    },
+
+    _watchAnalysis(sessionId) {
+      const es = new EventSource(`/stream/${sessionId}`);
+      es.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        if (data.msg) {
+          this.analysisLog.push(data.msg);
+          this.$nextTick(() => {
+            const el = document.getElementById('agentLog');
+            if (el) el.scrollTop = el.scrollHeight;
+          });
+        }
+        if (data.progress) this.analysisProgress = data.progress;
+
+        if (data.done) {
+          es.close();
+          if (data.step === 'error') {
+            this.phase = 'upload';
+            alert('Analysis failed: ' + data.msg);
+          } else if (data.agent_message) {
+            this.messages = [{ role: 'assistant', content: data.agent_message }];
+            this.phase = 'chat';
+            this.$nextTick(() => this._scrollChat());
+          } else {
+            this.phase = 'upload';
+            alert('No analysis returned. Check that files contain readable content.');
+          }
+        }
+      };
+      es.onerror = () => {
+        es.close();
+        this.phase = 'upload';
+        alert('Connection lost during analysis.');
+      };
+    },
+
+    async sendMessage() {
+      if (!this.userInput.trim() || this.agentTyping) return;
+      const content = this.userInput.trim();
+      this.userInput = '';
+      this.messages.push({ role: 'user', content });
+      this.agentTyping = true;
+      this.$nextTick(() => this._scrollChat());
+
+      try {
+        const res = await fetch('/api/agent/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: this.messages }),
+        });
+        if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Chat failed'); }
+        const { reply } = await res.json();
+        this.messages.push({ role: 'assistant', content: reply });
+      } catch(e) {
+        this.messages.push({ role: 'assistant', content: 'Sorry, something went wrong: ' + e.message });
+      } finally {
+        this.agentTyping = false;
+        this.$nextTick(() => this._scrollChat());
+      }
+    },
+
+    async generateBrief() {
+      this.briefLoading = true;
+      this.phase = 'briefing';
+      try {
+        const res = await fetch('/api/agent/brief', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: this.messages }),
+        });
+        if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Brief failed'); }
+        const { brief } = await res.json();
+        this.brief = brief;
+        this.phase = 'brief';
+      } catch(e) {
+        this.phase = 'chat';
+        alert('Failed to generate brief: ' + e.message);
+      } finally {
+        this.briefLoading = false;
+      }
+    },
+
+    async generateProposal() {
+      this.phase = 'proposing';
+      try {
+        const res = await fetch('/api/agent/propose', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ brief: this.brief }),
+        });
+        if (!res.ok) { const e = await res.json(); throw new Error(e.detail || 'Proposal failed'); }
+        const { items, total } = await res.json();
+        this.proposal = items;
+        this.proposalTotal = total;
+        this.phase = 'proposal';
+      } catch(e) {
+        this.phase = 'brief';
+        alert('Failed to match catalog: ' + e.message);
+      }
+    },
+
+    _scrollChat() {
+      const el = document.getElementById('chatMessages');
+      if (el) el.scrollTop = el.scrollHeight;
+    },
+
+    renderMarkdown(text) {
+      // Minimal markdown: bold, bullets, line breaks
+      return text
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/^#{1,3} (.+)$/gm, '<p class="font-semibold text-slate-900 mt-3 mb-1">$1</p>')
+        .replace(/^[-•] (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
+        .replace(/(<li[\s\S]*?<\/li>)/g, '<ul class="space-y-0.5 my-1">$1</ul>')
+        .replace(/\n{2,}/g, '</p><p class="mt-2">')
+        .replace(/\n/g, '<br>');
+    },
+
+    escapeHtml(text) {
+      return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    },
+  }
+}
+</script>
+{% endblock %}
