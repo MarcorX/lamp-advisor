@@ -93,6 +93,29 @@ class User(Base):
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    _seed_admin()
+
+
+def _seed_admin():
+    """Ensure the default admin user always exists after every deploy."""
+    from services.auth import hash_password
+    admin_email = os.getenv("ADMIN_EMAIL", "carnalbro@gmail.com")
+    admin_password = os.getenv("ADMIN_PASSWORD", "admin123")
+    admin_name = os.getenv("ADMIN_NAME", "Marco")
+    db = SessionLocal()
+    try:
+        existing = db.query(User).filter(User.email == admin_email).first()
+        if not existing:
+            db.add(User(
+                email=admin_email,
+                name=admin_name,
+                password_hash=hash_password(admin_password),
+                is_admin=True,
+                is_approved=True,
+            ))
+            db.commit()
+    finally:
+        db.close()
 
 
 def get_db():

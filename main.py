@@ -1088,22 +1088,15 @@ def register_post(
             "request": request, "error": "An account with that email already exists."
         })
 
-    is_first = db.query(User).count() == 0
     user = User(
         email=email,
         name=name.strip(),
         password_hash=hash_password(password),
-        is_admin=is_first,
-        is_approved=is_first,
+        is_admin=False,
+        is_approved=False,
     )
     db.add(user)
     db.commit()
-    db.refresh(user)
-
-    if is_first:
-        request.session["user_id"] = user.id
-        return RedirectResponse("/", status_code=302)
-
     return RedirectResponse("/pending", status_code=302)
 
 
