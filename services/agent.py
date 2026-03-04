@@ -24,6 +24,8 @@ from services.progress import push_sync
 # ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = """\
+LANGUAGE: Respond in Spanish (español) by default. If the user writes in English, switch to English for that conversation.
+
 You are Alex, an expert lighting designer and interior lighting specialist with 20 years of \
 experience across residential, commercial, hotel, retail, and hospitality projects.
 

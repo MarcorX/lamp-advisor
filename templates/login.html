@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="{{ lang() }}">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Sign In — LampAdvisor</title>
+  <title>{{ T('login_btn') }} — LampAdvisor</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-slate-900 min-h-screen flex items-center justify-center p-4">
@@ -13,12 +13,12 @@
     <div class="text-center mb-8">
       <div class="w-14 h-14 bg-amber-500 rounded-2xl flex items-center justify-center text-white font-bold text-xl mx-auto mb-4">LA</div>
       <h1 class="text-white text-2xl font-bold">LampAdvisor</h1>
-      <p class="text-slate-400 text-sm mt-1">AI Lighting Proposals</p>
+      <p class="text-slate-400 text-sm mt-1">{{ T('nav_ai_subtitle') }}</p>
     </div>
 
     <!-- Card -->
     <div class="bg-slate-800 rounded-2xl p-8 shadow-xl border border-slate-700">
-      <h2 class="text-white font-semibold text-lg mb-6">Sign in to your account</h2>
+      <h2 class="text-white font-semibold text-lg mb-6">{{ T('login_heading') }}</h2>
 
       {% if error %}
       <div class="mb-5 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl px-4 py-3 text-sm">
@@ -28,28 +28,43 @@
 
       <form method="post" action="/login" class="space-y-4">
         <div>
-          <label class="block text-slate-400 text-xs font-medium mb-1.5 uppercase tracking-wide">Email</label>
+          <label class="block text-slate-400 text-xs font-medium mb-1.5 uppercase tracking-wide">{{ T('login_email') }}</label>
           <input type="email" name="email" required autofocus
             class="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-2.5 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500"
             placeholder="you@example.com"/>
         </div>
         <div>
-          <label class="block text-slate-400 text-xs font-medium mb-1.5 uppercase tracking-wide">Password</label>
+          <label class="block text-slate-400 text-xs font-medium mb-1.5 uppercase tracking-wide">{{ T('login_password') }}</label>
           <input type="password" name="password" required
             class="w-full bg-slate-900 border border-slate-600 rounded-xl px-4 py-2.5 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-amber-500"
             placeholder="••••••••"/>
         </div>
         <button type="submit"
           class="w-full bg-amber-500 hover:bg-amber-600 text-white font-semibold py-2.5 rounded-xl transition-colors text-sm mt-2">
-          Sign In
+          {{ T('login_btn') }}
         </button>
       </form>
     </div>
 
     <p class="text-center text-slate-500 text-sm mt-6">
-      Don't have an account?
-      <a href="/register" class="text-amber-400 hover:text-amber-300 font-medium">Request access</a>
+      {{ T('login_no_account') }}
+      <a href="/register" class="text-amber-400 hover:text-amber-300 font-medium">{{ T('login_request_access') }}</a>
     </p>
+
+    <!-- Language switcher -->
+    <div class="flex justify-center gap-3 mt-4">
+      <form action="/set-lang" method="post">
+        <input type="hidden" name="lang" value="es">
+        <input type="hidden" name="next" value="/login">
+        <button type="submit" class="text-xs {% if lang() == 'es' %}text-amber-400 font-semibold{% else %}text-slate-600 hover:text-slate-400{% endif %}">ES</button>
+      </form>
+      <span class="text-slate-700">·</span>
+      <form action="/set-lang" method="post">
+        <input type="hidden" name="lang" value="en">
+        <input type="hidden" name="next" value="/login">
+        <button type="submit" class="text-xs {% if lang() == 'en' %}text-amber-400 font-semibold{% else %}text-slate-600 hover:text-slate-400{% endif %}">EN</button>
+      </form>
+    </div>
   </div>
 </body>
 </html>

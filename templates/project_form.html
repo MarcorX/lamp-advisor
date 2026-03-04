@@ -80,51 +80,145 @@
       <div x-show="analysisDone" class="mt-4 flex items-center gap-3" x-cloak>
         <span class="text-sm text-emerald-600 font-medium flex items-center gap-1.5">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-          Fields auto-filled from file
+          Analysis complete — review below
         </span>
         <button type="button" @click="analyzeFile()" class="text-xs text-blue-500 underline hover:text-blue-700">Re-analyze</button>
       </div>
     </div>
 
-    <!-- AI Chat Refinement Panel -->
+    <!-- ── Project Understanding Card ── -->
     <div x-show="analysisDone" x-cloak
          x-transition:enter="transition ease-out duration-300"
-         x-transition:enter-start="opacity-0 -translate-y-1"
+         x-transition:enter-start="opacity-0 -translate-y-2"
          x-transition:enter-end="opacity-100 translate-y-0"
-         class="card p-5 border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50">
-      <div class="flex items-center gap-2 mb-1">
-        <span class="w-6 h-6 bg-blue-600 text-white rounded-lg flex items-center justify-center text-xs font-bold shrink-0">AI</span>
-        <h4 class="text-sm font-semibold text-slate-800">Correct the analysis</h4>
-      </div>
-      <p class="text-xs text-slate-500 mb-3 ml-8">Tell the AI what's wrong and it will update the form fields.</p>
+         class="card overflow-hidden">
 
-      <!-- Chat history -->
-      <div x-show="chatHistory.length > 0" class="space-y-2 mb-3 max-h-48 overflow-y-auto" id="chatHistory">
-        <template x-for="(msg, i) in chatHistory" :key="i">
-          <div class="text-xs rounded-xl px-3 py-2 leading-relaxed"
-               :class="msg.role === 'user'
-                 ? 'bg-blue-600 text-white ml-10'
-                 : 'bg-white text-slate-700 border border-slate-200 mr-10'"
-               x-text="msg.text"></div>
-        </template>
-        <div x-show="chatLoading" class="bg-white border border-slate-200 rounded-xl px-3 py-2 mr-10">
-          <span class="text-xs text-slate-400 animate-pulse">Claude is thinking…</span>
+      <!-- Header -->
+      <div class="px-6 py-4 bg-gradient-to-r from-slate-800 to-slate-700 text-white">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2">
+            <span class="w-6 h-6 bg-amber-400 text-slate-900 rounded-lg flex items-center justify-center text-xs font-bold shrink-0">AI</span>
+            <h4 class="font-semibold text-sm">What I understood about your project</h4>
+          </div>
+          <span class="text-xs text-slate-400" x-text="lastExtracted?.rooms?.length ? `${lastExtracted.rooms.length} spaces · ${(lastExtracted.rooms.reduce((s,r)=>s+(r.fixtures_recommended||0),0))} fixtures total` : ''"></span>
         </div>
+        <!-- Property chips -->
+        <div class="flex flex-wrap gap-2 mt-1">
+          <template x-if="lastExtracted?.property_type">
+            <span class="text-xs bg-white/10 rounded-full px-2.5 py-0.5 capitalize" x-text="lastExtracted.property_type"></span>
+          </template>
+          <template x-if="lastExtracted?.property_level">
+            <span class="text-xs bg-amber-400/20 text-amber-300 rounded-full px-2.5 py-0.5 capitalize" x-text="lastExtracted.property_level"></span>
+          </template>
+          <template x-if="lastExtracted?.total_sqm">
+            <span class="text-xs bg-white/10 rounded-full px-2.5 py-0.5" x-text="lastExtracted.total_sqm + ' m²'"></span>
+          </template>
+          <template x-if="lastExtracted?.style">
+            <span class="text-xs bg-white/10 rounded-full px-2.5 py-0.5 capitalize" x-text="lastExtracted.style"></span>
+          </template>
+          <template x-if="lastExtracted?.num_floors">
+            <span class="text-xs bg-white/10 rounded-full px-2.5 py-0.5" x-text="lastExtracted.num_floors + (lastExtracted.num_floors>1 ? ' floors' : ' floor')"></span>
+          </template>
+        </div>
+        <!-- AI summary -->
+        <p x-show="lastExtracted?.summary" class="text-xs text-slate-300 mt-3 leading-relaxed" x-text="lastExtracted?.summary"></p>
       </div>
 
-      <!-- Input row -->
-      <div class="flex gap-2">
-        <input type="text" x-model="chatMessage"
-               @keydown.enter.prevent="sendRefinement()"
-               :disabled="chatLoading"
-               placeholder="e.g. Only 7 rooms, not 15. Rooms are: living, kitchen, 3 bedrooms, 2 bathrooms"
-               class="flex-1 border border-blue-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400 bg-white disabled:opacity-50"/>
-        <button type="button" @click="sendRefinement()"
-                :disabled="!chatMessage.trim() || chatLoading"
-                class="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-4 py-2 disabled:opacity-40 transition-colors flex items-center">
-          <svg x-show="!chatLoading" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
-          <svg x-show="chatLoading" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-        </button>
+      <!-- Room-by-room table -->
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead class="bg-slate-50 text-slate-500 uppercase tracking-wide border-b border-slate-100">
+            <tr>
+              <th class="text-left px-4 py-2.5">Space</th>
+              <th class="text-left px-3 py-2.5">m²</th>
+              <th class="text-left px-3 py-2.5">Fixtures</th>
+              <th class="text-left px-3 py-2.5">Type(s)</th>
+              <th class="text-left px-3 py-2.5">CCT</th>
+              <th class="text-left px-3 py-2.5">CRI</th>
+              <th class="text-center px-3 py-2.5">Dim</th>
+              <th class="text-left px-3 py-2.5">IP</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-50">
+            <template x-for="(room, i) in (lastExtracted?.rooms || [])" :key="i">
+              <tr class="hover:bg-slate-50 transition-colors">
+                <td class="px-4 py-2.5">
+                  <p class="font-medium text-slate-800" x-text="room.name"></p>
+                  <p x-show="room.notes" class="text-slate-400 text-[10px] leading-tight mt-0.5" x-text="room.notes"></p>
+                </td>
+                <td class="px-3 py-2.5 text-slate-500" x-text="room.sqm ? room.sqm + 'm²' : '—'"></td>
+                <td class="px-3 py-2.5">
+                  <span class="font-semibold text-slate-800" x-text="room.fixtures_recommended || '?'"></span>
+                  <span class="text-slate-400">×</span>
+                </td>
+                <td class="px-3 py-2.5">
+                  <div class="flex flex-wrap gap-1">
+                    <template x-for="(t, ti) in (room.fixture_types || [])" :key="ti">
+                      <span class="badge bg-slate-100 text-slate-600 capitalize" x-text="t"></span>
+                    </template>
+                  </div>
+                </td>
+                <td class="px-3 py-2.5">
+                  <span x-show="room.color_temp" class="badge bg-orange-100 text-orange-700" x-text="room.color_temp"></span>
+                  <span x-show="!room.color_temp" class="text-slate-400">—</span>
+                </td>
+                <td class="px-3 py-2.5 text-slate-600" x-text="room.cri_min ? room.cri_min + '+' : '—'"></td>
+                <td class="px-3 py-2.5 text-center">
+                  <span x-show="room.dimmable" class="text-emerald-500" title="Dimmable">
+                    <svg class="w-3.5 h-3.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+                  </span>
+                  <span x-show="!room.dimmable" class="text-slate-300">—</span>
+                </td>
+                <td class="px-3 py-2.5">
+                  <span x-show="room.ip_required && room.ip_required !== 'IP20'"
+                        class="badge bg-blue-100 text-blue-700" x-text="room.ip_required"></span>
+                  <span x-show="!room.ip_required || room.ip_required === 'IP20'"
+                        class="text-slate-400 text-[10px]">IP20</span>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+          <!-- Totals row -->
+          <tfoot class="bg-slate-50 border-t border-slate-200">
+            <tr>
+              <td class="px-4 py-2.5 font-semibold text-slate-700" x-text="`Total — ${lastExtracted?.rooms?.length || 0} spaces`"></td>
+              <td class="px-3 py-2.5 font-semibold text-slate-700" x-text="lastExtracted?.total_sqm ? lastExtracted.total_sqm + ' m²' : '—'"></td>
+              <td class="px-3 py-2.5 font-semibold text-slate-800" x-text="(lastExtracted?.rooms?.reduce((s,r)=>s+(r.fixtures_recommended||0),0)||0) + '×'"></td>
+              <td colspan="5" class="px-3 py-2.5 text-xs text-slate-400" x-text="lastExtracted?.special_requirements || ''"></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <!-- Chat refinement -->
+      <div class="px-5 py-4 border-t border-slate-100 bg-slate-50">
+        <p class="text-xs font-medium text-slate-600 mb-2">Something wrong? Tell the AI and it will update:</p>
+        <!-- Chat history -->
+        <div x-show="chatHistory.length > 0" class="space-y-1.5 mb-3 max-h-40 overflow-y-auto" id="chatHistory">
+          <template x-for="(msg, i) in chatHistory" :key="i">
+            <div class="text-xs rounded-xl px-3 py-2 leading-relaxed"
+                 :class="msg.role === 'user'
+                   ? 'bg-blue-600 text-white ml-10'
+                   : 'bg-white text-slate-700 border border-slate-200 mr-10'"
+                 x-text="msg.text"></div>
+          </template>
+          <div x-show="chatLoading" class="bg-white border border-slate-200 rounded-xl px-3 py-2 mr-10">
+            <span class="text-xs text-slate-400 animate-pulse">Claude is thinking…</span>
+          </div>
+        </div>
+        <div class="flex gap-2">
+          <input type="text" x-model="chatMessage"
+                 @keydown.enter.prevent="sendRefinement()"
+                 :disabled="chatLoading"
+                 placeholder="e.g. Only 7 rooms, not 15 — living, kitchen, 3 bedrooms, 2 bathrooms"
+                 class="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-blue-400 bg-white disabled:opacity-50"/>
+          <button type="button" @click="sendRefinement()"
+                  :disabled="!chatMessage.trim() || chatLoading"
+                  class="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-4 py-2 disabled:opacity-40 transition-colors flex items-center shrink-0">
+            <svg x-show="!chatLoading" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+            <svg x-show="chatLoading" class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          </button>
+        </div>
       </div>
     </div>
 

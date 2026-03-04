@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" x-data="chatPanel()">
+<html lang="{{ lang() }}" x-data="chatPanel()">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
@@ -19,15 +19,73 @@
   </script>
   <style>
     [x-cloak] { display: none !important; }
-    .nav-link { @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-200 transition-all duration-150; }
-    .nav-link:hover { @apply bg-slate-800 text-slate-100; }
-    .nav-link.active { @apply bg-slate-800 text-amber-400 border-l-2 border-amber-400 pl-[10px]; }
-    .card { @apply bg-white rounded-2xl border border-slate-100 shadow-sm; }
-    .btn-primary { @apply bg-amber-500 hover:bg-amber-600 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm; }
-    .btn-secondary { @apply border border-slate-200 hover:bg-slate-50 text-slate-700 font-medium px-4 py-2 rounded-lg transition-colors text-sm; }
-    .badge { @apply text-xs font-medium px-2.5 py-0.5 rounded-full; }
-    .chat-bubble-user { @apply bg-amber-500 text-white rounded-2xl rounded-br-sm px-4 py-2.5 max-w-xs text-sm; }
-    .chat-bubble-ai { @apply bg-white border border-slate-200 text-slate-700 rounded-2xl rounded-bl-sm px-4 py-2.5 max-w-sm text-sm shadow-sm; }
+
+    /* Nav links — plain CSS, no @apply (Safari/CDN compatible) */
+    .nav-link {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.625rem 0.75rem; border-radius: 0.5rem;
+      font-size: 0.875rem; font-weight: 500;
+      color: #e2e8f0;   /* slate-200 → high contrast on dark bg */
+      text-decoration: none;
+      transition: background-color 150ms, color 150ms;
+    }
+    .nav-link:hover { background-color: #334155; color: #ffffff; }
+    .nav-link.active {
+      background-color: #334155; color: #fbbf24;
+      border-left: 2px solid #fbbf24; padding-left: 10px;
+    }
+
+    /* Cards */
+    .card {
+      background: #ffffff; border-radius: 1rem;
+      border: 1px solid #f1f5f9;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+
+    /* Buttons */
+    .btn-primary {
+      display: inline-flex; align-items: center; justify-content: center;
+      background-color: #f59e0b; color: #ffffff;
+      font-weight: 500; font-size: 0.875rem;
+      padding: 0.5rem 1rem; border-radius: 0.5rem;
+      border: none; cursor: pointer;
+      transition: background-color 150ms;
+      text-decoration: none;
+    }
+    .btn-primary:hover { background-color: #d97706; }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-secondary {
+      display: inline-flex; align-items: center; justify-content: center;
+      border: 1px solid #e2e8f0; background: #ffffff;
+      color: #334155; font-weight: 500; font-size: 0.875rem;
+      padding: 0.5rem 1rem; border-radius: 0.5rem;
+      cursor: pointer; transition: background-color 150ms;
+      text-decoration: none;
+    }
+    .btn-secondary:hover { background-color: #f8fafc; }
+
+    /* Badges */
+    .badge {
+      font-size: 0.75rem; font-weight: 500;
+      padding: 0.125rem 0.625rem; border-radius: 9999px;
+      display: inline-block;
+    }
+
+    /* Chat bubbles */
+    .chat-bubble-user {
+      background-color: #f59e0b; color: #ffffff;
+      border-radius: 1rem 1rem 0.25rem 1rem;
+      padding: 0.625rem 1rem; max-width: 20rem; font-size: 0.875rem;
+    }
+    .chat-bubble-ai {
+      background: #ffffff; border: 1px solid #e2e8f0; color: #334155;
+      border-radius: 1rem 1rem 1rem 0.25rem;
+      padding: 0.625rem 1rem; max-width: 24rem; font-size: 0.875rem;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+
+    /* Scrollbar */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
@@ -45,7 +103,7 @@
         <div class="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center text-white font-bold text-sm">LA</div>
         <div>
           <p class="text-white font-bold text-sm leading-tight">LampAdvisor</p>
-          <p class="text-slate-500 text-xs">AI Lighting Proposals</p>
+          <p class="text-slate-400 text-xs">{{ T('nav_ai_subtitle') }}</p>
         </div>
       </a>
     </div>
@@ -53,61 +111,81 @@
     <!-- Navigation -->
     <nav class="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
 
-      <p class="text-slate-400 text-xs uppercase tracking-wider px-3 pt-2 pb-1 font-semibold">Projects</p>
+      <p class="text-slate-300 text-xs uppercase tracking-wider px-3 pt-2 pb-1 font-semibold">{{ T('nav_section_projects') }}</p>
 
-      <a href="/agent" class="nav-link {% if '/agent' in request.url.path %}active{% endif %} bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 text-amber-800 hover:from-amber-100 hover:to-orange-100">
-        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
-        AI Agent ✦
-      </a>
-      <a href="/projects/new" class="nav-link {% if '/projects/new' in request.url.path %}active{% endif %}">
+      <a href="/projects/new" class="nav-link {% if request.url.path in ('/projects/new', '/agent') %}active{% endif %}">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-        New Project
+        {{ T('nav_new_project') }}
       </a>
       <a href="/projects" class="nav-link {% if request.url.path == '/projects' %}active{% endif %}">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
-        All Projects
+        {{ T('nav_all_projects') }}
       </a>
 
-      <p class="text-slate-400 text-xs uppercase tracking-wider px-3 pt-4 pb-1 font-semibold">Catalog</p>
+      <p class="text-slate-400 text-xs uppercase tracking-wider px-3 pt-4 pb-1 font-semibold">{{ T('nav_section_catalog') }}</p>
 
       <a href="/lamps" class="nav-link {% if request.url.path == '/lamps' %}active{% endif %}">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
-        Lamp Database
+        {{ T('nav_lamp_database') }}
       </a>
       <a href="/lamps/import" class="nav-link {% if '/lamps/import' in request.url.path %}active{% endif %}">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
-        Import Catalog
+        {{ T('nav_import_catalog') }}
         <span class="ml-auto text-xs bg-amber-500 text-white px-1.5 py-0.5 rounded font-bold">AI</span>
       </a>
       <a href="/lamps/add" class="nav-link {% if '/lamps/add' in request.url.path %}active{% endif %}">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-        Add Lamp
+        {{ T('nav_add_lamp') }}
       </a>
 
-      <p class="text-slate-400 text-xs uppercase tracking-wider px-3 pt-4 pb-1 font-semibold">Tools</p>
+      <p class="text-slate-400 text-xs uppercase tracking-wider px-3 pt-4 pb-1 font-semibold">{{ T('nav_section_tools') }}</p>
 
       <a href="/chat" class="nav-link {% if request.url.path == '/chat' %}active{% endif %}">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
-        AI Chat
+        {{ T('nav_ai_chat') }}
         <span class="ml-auto text-xs bg-amber-500 text-white px-1.5 py-0.5 rounded font-bold">AI</span>
       </a>
       <a href="/" class="nav-link {% if request.url.path == '/' %}active{% endif %}">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
-        Dashboard
+        {{ T('nav_dashboard') }}
       </a>
+      {% if request.state.current_user and request.state.current_user.is_admin %}
       <a href="/settings" class="nav-link {% if '/settings' in request.url.path %}active{% endif %}">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-        Settings
+        {{ T('nav_settings') }}
       </a>
+      {% endif %}
 
       {% if request.state.current_user and request.state.current_user.is_admin %}
-      <p class="text-slate-400 text-xs uppercase tracking-wider px-3 pt-4 pb-1 font-semibold">Admin</p>
+      <p class="text-slate-400 text-xs uppercase tracking-wider px-3 pt-4 pb-1 font-semibold">{{ T('nav_section_admin') }}</p>
       <a href="/admin/users" class="nav-link {% if '/admin/users' in request.url.path %}active{% endif %}">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>
-        Manage Users
+        {{ T('nav_manage_users') }}
       </a>
       {% endif %}
     </nav>
+
+    <!-- Language switcher -->
+    <div class="px-3 py-2 border-t border-slate-800 flex gap-1">
+      <form action="/set-lang" method="post" class="flex-1">
+        <input type="hidden" name="lang" value="es">
+        <input type="hidden" name="next" value="{{ request.url.path }}">
+        <button type="submit"
+                class="w-full text-xs py-1.5 rounded-lg transition-colors font-medium
+                       {% if lang() == 'es' %}bg-slate-700 text-amber-400{% else %}text-slate-300 hover:text-white hover:bg-slate-800{% endif %}">
+          ES
+        </button>
+      </form>
+      <form action="/set-lang" method="post" class="flex-1">
+        <input type="hidden" name="lang" value="en">
+        <input type="hidden" name="next" value="{{ request.url.path }}">
+        <button type="submit"
+                class="w-full text-xs py-1.5 rounded-lg transition-colors font-medium
+                       {% if lang() == 'en' %}bg-slate-700 text-amber-400{% else %}text-slate-300 hover:text-white hover:bg-slate-800{% endif %}">
+          EN
+        </button>
+      </form>
+    </div>
 
     <!-- User + API Status -->
     <div class="px-3 py-3 border-t border-slate-800 space-y-1" x-data="apiStatus()" x-init="check()">
@@ -122,7 +200,7 @@
           <p class="text-white text-xs font-medium truncate">{{ request.state.current_user.name }}</p>
           <p class="text-slate-500 text-xs truncate">{{ request.state.current_user.email }}</p>
         </div>
-        <a href="/logout" title="Sign out" class="text-slate-500 hover:text-slate-300 transition-colors">
+        <a href="/logout" title="{{ T('nav_logout') }}" class="text-slate-500 hover:text-slate-300 transition-colors">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
         </a>
       </div>
@@ -159,7 +237,7 @@
   <button @click="open = !open"
     class="fixed bottom-6 right-6 z-50 w-14 h-14 bg-amber-500 hover:bg-amber-600 text-white rounded-full shadow-lg flex items-center justify-center transition-all duration-200"
     :class="open ? 'rotate-45' : ''"
-    title="AI Chat">
+    title="{{ T('nav_ai_chat') }}">
     <svg x-show="!open" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
     <svg x-show="open" class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
   </button>
@@ -179,8 +257,8 @@
       <div class="flex items-center gap-2">
         <div class="w-7 h-7 bg-amber-500 rounded-full flex items-center justify-center text-white text-xs font-bold">AI</div>
         <div>
-          <p class="text-white text-sm font-semibold">LampAdvisor AI</p>
-          <p class="text-slate-400 text-xs">Ask anything about your catalog</p>
+          <p class="text-white text-sm font-semibold">{{ T('chat_title') }}</p>
+          <p class="text-slate-400 text-xs">{{ T('chat_subtitle') }}</p>
         </div>
       </div>
       <button @click="open = false" class="text-slate-400 hover:text-white transition-colors">
@@ -205,21 +283,21 @@
       </div>
     </div>
 
-    <!-- Suggested prompts (shown when empty) -->
+    <!-- Suggested prompts -->
     <div x-show="messages.length === 0" class="px-3 pb-2">
-      <p class="text-xs text-slate-400 mb-2 px-1">Try asking:</p>
+      <p class="text-xs text-slate-400 mb-2 px-1">{{ T('chat_try') }}</p>
       <div class="flex flex-wrap gap-1.5">
-        <button @click="sendSuggestion('What lamps do I have for luxury residential?')" class="text-xs bg-white border border-slate-200 hover:border-amber-400 hover:text-amber-600 px-2.5 py-1 rounded-full transition-colors">Luxury residential</button>
-        <button @click="sendSuggestion('Show me dimmable pendants under $100')" class="text-xs bg-white border border-slate-200 hover:border-amber-400 hover:text-amber-600 px-2.5 py-1 rounded-full transition-colors">Dimmable pendants</button>
-        <button @click="sendSuggestion('How many lamps for a 25m² living room?')" class="text-xs bg-white border border-slate-200 hover:border-amber-400 hover:text-amber-600 px-2.5 py-1 rounded-full transition-colors">Lamp count calc</button>
-        <button @click="sendSuggestion('What is my catalog summary?')" class="text-xs bg-white border border-slate-200 hover:border-amber-400 hover:text-amber-600 px-2.5 py-1 rounded-full transition-colors">Catalog summary</button>
+        <button @click="sendSuggestion('{{ T('chat_suggest_1') }}')" class="text-xs bg-white border border-slate-200 hover:border-amber-400 hover:text-amber-600 px-2.5 py-1 rounded-full transition-colors">{{ T('chat_suggest_1') }}</button>
+        <button @click="sendSuggestion('{{ T('chat_suggest_2') }}')" class="text-xs bg-white border border-slate-200 hover:border-amber-400 hover:text-amber-600 px-2.5 py-1 rounded-full transition-colors">{{ T('chat_suggest_2') }}</button>
+        <button @click="sendSuggestion('{{ T('chat_suggest_3') }}')" class="text-xs bg-white border border-slate-200 hover:border-amber-400 hover:text-amber-600 px-2.5 py-1 rounded-full transition-colors">{{ T('chat_suggest_3') }}</button>
+        <button @click="sendSuggestion('{{ T('chat_suggest_4') }}')" class="text-xs bg-white border border-slate-200 hover:border-amber-400 hover:text-amber-600 px-2.5 py-1 rounded-full transition-colors">{{ T('chat_suggest_4') }}</button>
       </div>
     </div>
 
     <!-- Input -->
     <div class="px-3 py-3 border-t border-slate-100 bg-white">
       <form @submit.prevent="sendMessage" class="flex gap-2">
-        <input x-model="input" type="text" placeholder="Ask about lamps, projects, specs…"
+        <input x-model="input" type="text" placeholder="{{ T('chat_placeholder') }}"
           :disabled="loading"
           class="flex-1 text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:border-amber-400 disabled:opacity-50 bg-slate-50"/>
         <button type="submit" :disabled="loading || !input.trim()"
@@ -231,33 +309,36 @@
   </div>
 
   <script>
+    // Translated labels for JS (API status widget)
+    const _i18n = {
+      ok:            '{{ T("api_connected") }}',
+      missing:       '{{ T("api_no_key") }}',
+      invalid_key:   '{{ T("api_invalid_key") }}',
+      no_permission: '{{ T("api_no_permission") }}',
+      network_error: '{{ T("api_network_error") }}',
+      error:         '{{ T("api_error") }}',
+      checking:      '{{ T("api_checking") }}',
+    };
+
     function apiStatus() {
       return {
         status: 'checking',
-        label: 'Checking API…',
+        label: _i18n.checking,
         detail: '',
 
         async check() {
           this.status = 'checking';
-          this.label = 'Checking…';
+          this.label = _i18n.checking;
           try {
             const res = await fetch('/api/status');
             const data = await res.json();
             this.status = data.status;
             const providerLabel = {anthropic: 'Claude', openai: 'OpenAI', local: 'Local Model'}[data.provider] || data.provider || 'AI';
-            const map = {
-              ok:            [`${providerLabel} · Connected`, data.key_preview ? `Key: ${data.key_preview}` : data.model || ''],
-              missing:       ['No API Key', 'Go to Settings to add one'],
-              invalid_key:   ['Invalid API Key', 'Check key in Settings'],
-              no_permission: ['API Permission Error', 'Check key scopes'],
-              network_error: ['Network Error', 'Check internet connection'],
-              error:         ['API Error', data.message || ''],
-            };
-            [this.label, this.detail] = map[data.status] || ['Unknown', data.message || ''];
+            const label = _i18n[data.status] || data.status;
+            this.label = data.status === 'ok' ? `${providerLabel} · ${label}` : label;
           } catch(e) {
             this.status = 'error';
-            this.label = 'Status check failed';
-            this.detail = '';
+            this.label = _i18n.error;
           }
         }
       }
@@ -307,13 +388,12 @@
             if (this.history.length > 20) this.history = this.history.slice(-20);
             this.addMessage('assistant', reply);
           } catch(e) {
-            this.addMessage('assistant', 'Sorry, something went wrong. Please try again.');
+            this.addMessage('assistant', 'Error. Please try again.');
           }
           this.loading = false;
         },
 
         formatMsg(text) {
-          // Basic markdown: bold, newlines, bullet points
           return text
             .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
             .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')

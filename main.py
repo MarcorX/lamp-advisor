@@ -32,6 +32,7 @@ from services.ai_project_analyzer import run_analysis
 from services.chat_handler import handle_message
 from services.ai_settings import load as load_settings, save as save_settings, provider_models
 import services.agent as agent_svc
+from services.i18n import T, set_lang, get_lang
 
 # ---------------------------------------------------------------------------
 # Setup
@@ -44,10 +45,24 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
+# Inject T() and lang() into every Jinja2 template automatically
+templates.env.globals["T"] = T
+templates.env.globals["lang"] = get_lang
+
 SECRET_KEY = os.getenv("SECRET_KEY", "changeme-set-SECRET_KEY-in-production")
 
 # Paths that don't require authentication
-_PUBLIC_PATHS = {"/login", "/register", "/logout", "/pending"}
+_PUBLIC_PATHS = {"/login", "/register", "/logout", "/pending", "/set-lang"}
+
+
+class LangMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        lang = request.cookies.get("lang", "es")
+        if lang not in ("es", "en"):
+            lang = "es"
+        set_lang(lang)
+        request.state.lang = lang
+        return await call_next(request)
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -65,6 +80,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 request.state.current_user = _db.query(User).filter(User.id == uid).first()
             finally:
                 _db.close()
+            # Clear stale session if user no longer exists (prevents redirect loop)
+            if not request.state.current_user:
+                request.session.pop("user_id", None)
 
         if not is_public:
             if not request.state.current_user:
@@ -75,7 +93,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-# SessionMiddleware must be outermost (last added = outermost in Starlette)
+# Middleware order: outermost first (last added = outermost in Starlette)
+app.add_middleware(LangMiddleware)
 app.add_middleware(AuthMiddleware)
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 
@@ -90,6 +109,18 @@ def on_startup():
         seed(_db)
     finally:
         _db.close()
+
+
+# ---------------------------------------------------------------------------
+# Language switcher
+# ---------------------------------------------------------------------------
+@app.post("/set-lang")
+async def set_language(lang: str = Form(...), next: str = Form("/")):
+    if lang not in ("es", "en"):
+        lang = "es"
+    response = RedirectResponse(next, status_code=303)
+    response.set_cookie("lang", lang, max_age=365 * 24 * 3600, httponly=True, samesite="lax")
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -384,7 +415,8 @@ def projects_list(request: Request, db: Session = Depends(get_db)):
 
 @app.get("/projects/new", response_class=HTMLResponse)
 def new_project_form(request: Request):
-    return templates.TemplateResponse("project_form.html", {"request": request})
+    # The agent IS the new-project flow
+    return templates.TemplateResponse("project_agent.html", {"request": request})
 
 
 @app.post("/api/projects/analyze-preview")
@@ -562,6 +594,59 @@ async def api_agent_propose(request: Request, db: Session = Depends(get_db)):
         return JSONResponse({"items": items, "total": total})
     except Exception as e:
         raise HTTPException(500, str(e))
+
+
+@app.post("/api/agent/save")
+async def api_agent_save(request: Request, db: Session = Depends(get_db)):
+    """Save agent proposal to DB. Returns {project_id} for redirect."""
+    body = await request.json()
+    name        = (body.get("name") or "Untitled Project").strip()
+    client_name = (body.get("client_name") or "").strip() or None
+    proposal_items = body.get("proposal") or []
+    total       = float(body.get("total") or 0)
+    agent_intro = (body.get("agent_intro") or "")[:2000]   # first AI message as justification
+
+    project = Project(
+        name=name,
+        client_name=client_name,
+        status="proposed",
+    )
+    db.add(project)
+    db.flush()
+
+    # Map agent proposal items → room_assignments format used by proposals.html
+    room_assignments = [
+        {
+            "room":           item.get("space") or item.get("label") or "—",
+            "lamp_id":        item.get("lamp_id"),
+            "lamp_brand":     item.get("lamp_brand", ""),
+            "lamp_model":     item.get("lamp_model", ""),
+            "lamp_category":  item.get("lamp_category", ""),
+            "lamp_wattage":   item.get("lamp_wattage"),
+            "lamp_lumens":    item.get("lamp_lumens"),
+            "lamp_color_temp":item.get("lamp_cct", ""),
+            "lamp_cri":       item.get("lamp_cri"),
+            "lamp_dimmable":  item.get("lamp_dimmable", False),
+            "lamp_ip":        item.get("lamp_ip", ""),
+            "lamp_price":     item.get("lamp_price"),
+            "quantity":       item.get("qty", 1),
+            "subtotal":       item.get("subtotal", 0),
+            "room_notes":     item.get("notes", ""),
+        }
+        for item in proposal_items
+    ]
+
+    proposal = Proposal(
+        project_id=project.id,
+        proposal_number=1,
+        title="AI Agent Lighting Proposal",
+        ai_justification=agent_intro,
+        total_price_usd=total,
+        lamps_json=json.dumps(room_assignments),
+    )
+    db.add(proposal)
+    db.commit()
+    return JSONResponse({"project_id": project.id})
 
 
 @app.post("/api/projects/new")
@@ -810,6 +895,33 @@ def project_detail(project_id: int, request: Request, db: Session = Depends(get_
     })
 
 
+@app.delete("/api/projects/{project_id}")
+def api_delete_project(project_id: int, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(404, "Project not found")
+    db.query(Proposal).filter(Proposal.project_id == project_id).delete()
+    db.delete(project)
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
+@app.patch("/api/projects/{project_id}")
+async def api_update_project(project_id: int, request: Request, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(404, "Project not found")
+    body = await request.json()
+    if "name" in body and body["name"].strip():
+        project.name = body["name"].strip()
+    if "client_name" in body:
+        project.client_name = body["client_name"].strip() or None
+    if "status" in body and body["status"] in ("pending", "analyzed", "proposed"):
+        project.status = body["status"]
+    db.commit()
+    return JSONResponse({"ok": True})
+
+
 @app.get("/projects", response_class=HTMLResponse)
 def projects_list_2(request: Request, db: Session = Depends(get_db)):
     projects = db.query(Project).order_by(Project.created_at.desc()).all()
@@ -865,6 +977,9 @@ def print_proposal(proposal_id: int, request: Request, db: Session = Depends(get
 # ---------------------------------------------------------------------------
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request):
+    user = request.state.current_user
+    if not user or not user.is_admin:
+        raise HTTPException(403)
     s = load_settings()
     return templates.TemplateResponse("settings.html", {
         "request": request,
@@ -881,6 +996,8 @@ async def settings_save(
     api_key:   str = Form(""),
     base_url:  str = Form(""),
 ):
+    if not request.state.current_user or not request.state.current_user.is_admin:
+        raise HTTPException(403)
     save_settings(provider=provider, model=model, api_key=api_key, base_url=base_url)
     return RedirectResponse("/settings?saved=1", status_code=303)
 
@@ -931,7 +1048,7 @@ def login_post(
             "request": request, "error": "Your account is pending admin approval."
         })
     request.session["user_id"] = user.id
-    return RedirectResponse("/", status_code=302)
+    return RedirectResponse("/projects/new", status_code=302)
 
 
 @app.get("/logout")
@@ -1040,3 +1157,22 @@ def admin_toggle(user_id: int, request: Request, db: Session = Depends(get_db)):
         u.is_admin = not u.is_admin
         db.commit()
     return RedirectResponse("/admin/users", status_code=303)
+
+
+@app.post("/admin/users/{user_id}/set-password")
+async def admin_set_password(
+    user_id: int,
+    request: Request,
+    new_password: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    if not request.state.current_user or not request.state.current_user.is_admin:
+        raise HTTPException(403)
+    if len(new_password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters")
+    u = db.query(User).filter(User.id == user_id).first()
+    if not u:
+        raise HTTPException(404)
+    u.password_hash = hash_password(new_password)
+    db.commit()
+    return RedirectResponse("/admin/users?pw_reset=1", status_code=303)

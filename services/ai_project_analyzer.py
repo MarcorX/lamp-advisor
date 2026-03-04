@@ -40,7 +40,8 @@ Required JSON structure:
     }
   ],
   "special_requirements": "free text — outdoor, high ceilings, wet zones, etc.",
-  "extracted_notes": "any other useful project information"
+  "extracted_notes": "any other useful project information",
+  "summary": "2-3 sentence plain-language overview of the lighting plan — e.g. 'This 220m² premium residence needs 68 fixtures across 9 spaces. Key areas include a dimmable pendant over the dining table, IP44 downlights in kitchen and bathrooms, and warm 2700K throughout living spaces. All main areas should be dimmable with CRI 90+ lamps.'"
 }
 
 Per-space lighting rules:

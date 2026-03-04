@@ -1,16 +1,31 @@
 {% extends "base.html" %}
-{% block title %}Projects — LampAdvisor{% endblock %}
+{% block title %}{{ T('projects_title') }} — LampAdvisor{% endblock %}
 {% block content %}
-<div class="p-8">
+<div class="p-8" x-data="projectsList()">
+
+  <!-- Header -->
   <div class="mb-6 flex items-center justify-between">
     <div>
-      <h2 class="text-2xl font-bold text-gray-900">Projects</h2>
-      <p class="text-gray-500 mt-1">{{ projects|length }} project{% if projects|length != 1 %}s{% endif %}</p>
+      <h2 class="text-2xl font-bold text-gray-900">{{ T('projects_title') }}</h2>
+      <p class="text-gray-500 mt-1">{{ projects|length }} proyecto{% if projects|length != 1 %}s{% endif %}</p>
     </div>
-    <a href="/projects/new" class="text-sm bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-      New Project
-    </a>
+    <div class="flex items-center gap-3">
+      <!-- Bulk delete bar (visible when selection > 0) -->
+      <div x-show="selected.size > 0" x-cloak class="flex items-center gap-3">
+        <span class="text-sm text-gray-600" x-text="`${selected.size} seleccionado${selected.size !== 1 ? 's' : ''}`"></span>
+        <button @click="deleteSelected()"
+                :disabled="deleting"
+                class="flex items-center gap-1.5 text-sm bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-lg transition-colors disabled:opacity-50">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+          <span x-text="deleting ? 'Eliminando…' : '{{ T('btn_delete') }}'"></span>
+        </button>
+        <button @click="selected.clear(); selected = new Set()" class="text-sm text-gray-500 hover:text-gray-700 px-2 py-2">{{ T('btn_cancel') }}</button>
+      </div>
+      <a href="/projects/new" class="text-sm bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+        {{ T('btn_new_project') }}
+      </a>
+    </div>
   </div>
 
   {% if projects %}
@@ -19,21 +34,77 @@
       <table class="w-full text-sm">
         <thead class="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide border-b border-gray-200">
           <tr>
-            <th class="text-left px-6 py-3">Project</th>
-            <th class="text-left px-4 py-3">Client</th>
-            <th class="text-left px-4 py-3">Type</th>
-            <th class="text-left px-4 py-3">Level</th>
-            <th class="text-left px-4 py-3">Area</th>
-            <th class="text-left px-4 py-3">Status</th>
-            <th class="text-left px-4 py-3">Date</th>
+            <!-- Select-all checkbox -->
+            <th class="pl-4 pr-2 py-3 w-8">
+              <input type="checkbox"
+                     class="rounded border-gray-300 text-amber-500 focus:ring-amber-400"
+                     :checked="allIds.length > 0 && selected.size === allIds.length"
+                     :indeterminate="selected.size > 0 && selected.size < allIds.length"
+                     @change="toggleAll($event.target.checked)"/>
+            </th>
+            <th class="text-left px-4 py-3">{{ T('col_project') }}</th>
+            <th class="text-left px-4 py-3">{{ T('col_client') }}</th>
+            <th class="text-left px-4 py-3">{{ T('col_type') }}</th>
+            <th class="text-left px-4 py-3">{{ T('col_level') }}</th>
+            <th class="text-left px-4 py-3">{{ T('col_area') }}</th>
+            <th class="text-left px-4 py-3">{{ T('col_status') }}</th>
+            <th class="text-left px-4 py-3">{{ T('col_date') }}</th>
             <th class="px-4 py-3"></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
           {% for project in projects %}
-          <tr class="hover:bg-gray-50">
-            <td class="px-6 py-3 font-medium text-gray-900">{{ project.name }}</td>
-            <td class="px-4 py-3 text-gray-500">{{ project.client_name or '—' }}</td>
+          <tr :class="selected.has({{ project.id }}) ? 'bg-amber-50' : 'hover:bg-gray-50'"
+              x-data="{
+                open: false,
+                editing: false,
+                editName: {{ project.name | tojson }},
+                editClient: {{ (project.client_name or '') | tojson }},
+                saving: false,
+                projectId: {{ project.id }},
+                confirmMsg: {{ T('confirm_delete_project') | tojson }},
+                async save() {
+                  this.saving = true;
+                  await fetch('/api/projects/' + this.projectId, {
+                    method: 'PATCH',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({name: this.editName, client_name: this.editClient})
+                  });
+                  location.reload();
+                },
+                async del() {
+                  if (!confirm(this.confirmMsg)) return;
+                  await fetch('/api/projects/' + this.projectId, {method: 'DELETE'});
+                  location.reload();
+                }
+              }">
+            <!-- Row checkbox -->
+            <td class="pl-4 pr-2 py-3">
+              <input type="checkbox"
+                     class="rounded border-gray-300 text-amber-500 focus:ring-amber-400"
+                     :checked="selected.has({{ project.id }})"
+                     @change="toggle({{ project.id }}, $event.target.checked)"/>
+            </td>
+            <td class="px-4 py-3 font-medium text-gray-900">
+              <template x-if="!editing">
+                <span>{{ project.name }}</span>
+              </template>
+              <template x-if="editing">
+                <input x-model="editName" @keydown.enter="save()" @keydown.escape="editing=false"
+                       class="border border-amber-300 rounded px-2 py-1 text-sm w-full focus:outline-none focus:border-amber-500"
+                       x-ref="nameInput"/>
+              </template>
+            </td>
+            <td class="px-4 py-3 text-gray-500">
+              <template x-if="!editing">
+                <span>{{ project.client_name or '—' }}</span>
+              </template>
+              <template x-if="editing">
+                <input x-model="editClient" @keydown.enter="save()" @keydown.escape="editing=false"
+                       placeholder="{{ T('col_client') }}"
+                       class="border border-amber-300 rounded px-2 py-1 text-sm w-full focus:outline-none focus:border-amber-500"/>
+              </template>
+            </td>
             <td class="px-4 py-3 text-gray-600 capitalize">{{ project.property_type or '—' }}</td>
             <td class="px-4 py-3">
               <span class="text-xs px-2 py-0.5 rounded-full
@@ -41,18 +112,50 @@
                 {% elif project.property_level == 'premium' %}bg-blue-100 text-blue-700
                 {% elif project.property_level == 'mid' %}bg-green-100 text-green-700
                 {% else %}bg-gray-100 text-gray-600{% endif %}">
-                {{ project.property_level | title }}
+                {{ T('level_' + (project.property_level or 'basic')) }}
               </span>
             </td>
             <td class="px-4 py-3 text-gray-500">{% if project.total_sqm %}{{ project.total_sqm }}m²{% else %}—{% endif %}</td>
             <td class="px-4 py-3">
               <span class="text-xs px-2 py-0.5 rounded-full {% if project.status == 'proposed' %}bg-green-100 text-green-700{% else %}bg-gray-100 text-gray-600{% endif %}">
-                {{ project.status }}
+                {{ T('status_' + project.status) }}
               </span>
             </td>
             <td class="px-4 py-3 text-gray-400 text-xs">{{ project.created_at.strftime('%d %b %Y') }}</td>
             <td class="px-4 py-3 text-right">
-              <a href="/projects/{{ project.id }}" class="text-sm text-amber-600 hover:underline">View</a>
+              <template x-if="editing">
+                <div class="flex items-center justify-end gap-2">
+                  <button @click="save()" :disabled="saving"
+                          class="text-xs bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg disabled:opacity-50">
+                    <span x-text="saving ? '{{ T('btn_saving') }}' : '{{ T('btn_save') }}'"></span>
+                  </button>
+                  <button @click="editing=false" class="text-xs text-gray-500 hover:text-gray-700 px-2 py-1.5">{{ T('btn_cancel') }}</button>
+                </div>
+              </template>
+              <template x-if="!editing">
+                <div class="flex items-center justify-end gap-3">
+                  <a href="/projects/{{ project.id }}" class="text-sm text-amber-600 hover:underline">{{ T('btn_view') }}</a>
+                  <div class="relative">
+                    <button @click="open=!open" @click.away="open=false"
+                            class="text-gray-400 hover:text-gray-600 p-1 rounded transition-colors">
+                      <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+                    </button>
+                    <div x-show="open" x-cloak
+                         class="absolute right-0 top-full mt-1 w-36 bg-white border border-gray-200 rounded-lg shadow-lg z-10 py-1">
+                      <button @click="open=false; editing=true; $nextTick(()=>$refs.nameInput?.focus())"
+                              class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+                        <svg class="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                        {{ T('btn_rename') }}
+                      </button>
+                      <button @click="open=false; del()"
+                              class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                        {{ T('btn_delete') }}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </template>
             </td>
           </tr>
           {% endfor %}
@@ -62,9 +165,43 @@
   </div>
   {% else %}
   <div class="bg-white rounded-xl border border-gray-200 p-12 text-center">
-    <p class="text-gray-400 text-lg mb-4">No projects yet</p>
-    <a href="/projects/new" class="inline-block bg-amber-500 hover:bg-amber-600 text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors">Create first project</a>
+    <p class="text-gray-400 text-lg mb-4">{{ T('projects_empty') }}</p>
+    <a href="/projects/new" class="inline-block bg-amber-500 hover:bg-amber-600 text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors">{{ T('btn_create_first') }}</a>
   </div>
   {% endif %}
 </div>
+
+<script>
+function projectsList() {
+  return {
+    selected: new Set(),
+    deleting: false,
+    allIds: [{% for project in projects %}{{ project.id }}{% if not loop.last %},{% endif %}{% endfor %}],
+
+    toggle(id, checked) {
+      const s = new Set(this.selected);
+      checked ? s.add(id) : s.delete(id);
+      this.selected = s;
+    },
+
+    toggleAll(checked) {
+      this.selected = checked ? new Set(this.allIds) : new Set();
+    },
+
+    async deleteSelected() {
+      if (this.selected.size === 0) return;
+      const n = this.selected.size;
+      const msg = n === 1
+        ? '{{ T('confirm_delete_project') }}'
+        : `¿Eliminar ${n} proyectos y todas sus propuestas? Esta acción no se puede deshacer.`;
+      if (!confirm(msg)) return;
+      this.deleting = true;
+      await Promise.all([...this.selected].map(id =>
+        fetch('/api/projects/' + id, { method: 'DELETE' })
+      ));
+      location.reload();
+    },
+  };
+}
+</script>
 {% endblock %}
