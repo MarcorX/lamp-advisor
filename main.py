@@ -1159,6 +1159,34 @@ def admin_toggle(user_id: int, request: Request, db: Session = Depends(get_db)):
     return RedirectResponse("/admin/users", status_code=303)
 
 
+@app.post("/admin/users/create")
+async def admin_create_user(
+    request: Request,
+    name: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    is_admin: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    if not request.state.current_user or not request.state.current_user.is_admin:
+        raise HTTPException(403)
+    if len(password) < 6:
+        raise HTTPException(400, "Password must be at least 6 characters")
+    existing = db.query(User).filter(User.email == email.lower().strip()).first()
+    if existing:
+        return RedirectResponse("/admin/users?exists=1", status_code=303)
+    user = User(
+        name=name.strip(),
+        email=email.lower().strip(),
+        password_hash=hash_password(password),
+        is_approved=True,
+        is_admin=bool(is_admin),
+    )
+    db.add(user)
+    db.commit()
+    return RedirectResponse("/admin/users?created=1", status_code=303)
+
+
 @app.post("/admin/users/{user_id}/set-password")
 async def admin_set_password(
     user_id: int,
