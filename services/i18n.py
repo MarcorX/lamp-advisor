@@ -31,7 +31,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "nav_new_project":       "Nuevo Proyecto",
         "nav_all_projects":      "Todos los Proyectos",
         "nav_section_catalog":   "Catálogo",
-        "nav_lamp_database":     "Base de Lámparas",
+        "nav_lamp_database":     "Catálogo de Lámparas",
         "nav_import_catalog":    "Importar Catálogo",
         "nav_add_lamp":          "Añadir Lámpara",
         "nav_section_tools":     "Herramientas",
